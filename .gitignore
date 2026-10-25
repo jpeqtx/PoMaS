@@ -1,2 +1,6 @@
 *.bak*
 build/
+firmware/
+MANUAL.pdf
+MANUAL_print.html
+*.ps1
