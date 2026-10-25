@@ -1,6 +1,6 @@
 // Auto-generated splash image data (RGB565)
 // Size: 240x135
-// Source: splash.png (240x135)
+// Source: splash image (generated)
 
 #define SPLASH_W 240
 #define SPLASH_H 135
