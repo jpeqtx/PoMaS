@@ -5,22 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PoMaS — Pocket Math Station</title>
 <style>
-  :root { --mint:#2a5c3a; --mint2:#7ab88a; --paper:#f7fef9; --ink:#1a3a25; --dim:#5a7060; }
+  :root { --mint:#2a5c3a; --mint2:#7ab88a; --paper:#f7fef9; --ink:#1a3a25; --dim:#5a7060; --line:#d8e4dc; }
+  * { box-sizing: border-box; }
   body { font-family: -apple-system, "Segoe UI", "Yu Gothic", Meiryo, sans-serif;
          max-width: 900px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem;
-         line-height: 1.7; color: #222; background: var(--paper); }
-  h1 { border-bottom: 3px solid var(--mint); padding-bottom: .4rem; color: var(--ink); }
-  h2 { color: var(--mint); border-bottom: 1px solid var(--mint2); padding-bottom: .3rem; margin-top: 2.5rem; }
+         line-height: 1.75; color: #222; background: var(--paper); }
+  h1 { border-bottom: 3px solid var(--mint); padding-bottom: .4rem; color: var(--ink); font-size: 2rem; }
+  h2 { color: var(--mint); border-bottom: 1px solid var(--mint2); padding-bottom: .3rem; margin-top: 2.5rem; font-size: 1.4rem; }
+  h3 { color: var(--ink); margin-top: 1.8rem; font-size: 1.1rem; }
   a { color: #1a5c9a; }
   .tag { display:inline-block; background:#e3ede6; color:var(--ink);
          padding:.15rem .55rem; border-radius:3px; font-size:.85rem; margin:.15rem .3rem .15rem 0; }
-  .lang { background:#f0f4f1; border-left:4px solid var(--mint2); padding:.7rem 1rem; margin:1rem 0; border-radius:3px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; margin:1.5rem 0; }
-  .card { background:#fff; border:1px solid #d8e4dc; border-radius:6px; padding:1rem 1.1rem; }
-  .card h3 { margin:.2rem 0 .5rem; color:var(--mint); font-size:1.05rem; }
-  .card ul { margin:.4rem 0; padding-left:1.2rem; font-size:.92rem; }
-  .card li { margin:.2rem 0; }
-  footer { margin-top:3rem; padding-top:1rem; border-top:1px solid #d8e4dc; color:var(--dim); font-size:.9rem; text-align:center; }
+  .lead { font-size: 1.05rem; color: #333; }
+  .cta { display: flex; flex-wrap: wrap; gap: .8rem; margin: 1.5rem 0; }
+  .btn { display: inline-block; padding: .7rem 1.4rem; border-radius: 5px; text-decoration: none; font-weight: 600; }
+  .btn-primary { background: var(--mint); color: #fff; }
+  .btn-primary:hover { background: #1a3a25; }
+  .btn-secondary { background: #fff; color: var(--mint); border: 1px solid var(--mint); }
+  .btn-secondary:hover { background: #e3ede6; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid #b8c8bc; padding: .5rem .8rem; text-align: left; font-size: .95rem; }
+  th { background: #e3ede6; color: var(--ink); }
+  pre { background: #f0f4f1; border-left: 4px solid var(--mint2); padding: .8rem 1rem; overflow-x: auto; font-size: .9rem; }
+  code { background: #f0f4f1; padding: .1rem .4rem; border-radius: 3px; font-size: .9rem; }
+  pre code { background: none; padding: 0; }
+  ul, ol { padding-left: 1.4rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin: 1rem 0; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 1rem 1.1rem; }
+  .card h3 { margin: .2rem 0 .5rem; color: var(--mint); font-size: 1rem; }
+  .card ul { margin: .3rem 0; padding-left: 1.2rem; font-size: .92rem; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--dim); font-size: .9rem; text-align: center; }
 </style>
 </head>
 <body>
@@ -34,94 +48,123 @@
   <span class="tag">v0.92</span>
 </p>
 
-<p><strong>PoMaS</strong> is a pocket math station for M5Stack Cardputer-Adv, integrating a calculator, CAS, statistics, graphing, scientific reference, and a μLisp interpreter.</p>
+<p class="lead"><strong>PoMaS</strong> は、M5Stack Cardputer-Adv 上で動作する多機能関数電卓です。
+数式計算から CAS、統計解析、グラフ描画、科学資料検索、μLisp インタプリタまで、
+数学・科学の作業を 1 台に統合しています。</p>
 
-<div class="lang">
-  <strong>🌐 Non-Japanese readers:</strong> Use your browser's translate feature (right-click → Translate).<br>
-  <strong>🌐 日本語で読む方へ:</strong> 下記の全 17 章から、必要な章を参照できます。
+<div class="cta">
+  <a class="btn btn-primary" href="https://github.com/jpeqtx/PoMaS/releases/latest">最新版をダウンロード</a>
+  <a class="btn btn-secondary" href="manual/">操作マニュアル（全 17 章）</a>
+  <a class="btn btn-secondary" href="https://github.com/jpeqtx/PoMaS">GitHub</a>
 </div>
 
-<h2>📖 操作マニュアル（全 17 章）</h2>
+<h2>主な機能</h2>
+
+<table>
+  <tr><th>モード</th><th>機能</th></tr>
+  <tr><td><strong>Calculator</strong></td><td>四則演算・関数・履歴・メモリ・変数 A〜J・Ans バンク・複素数・基数変換・ビット演算・RPN・拡張ツール</td></tr>
+  <tr><td><strong>CAS</strong></td><td>多項式の評価・微分・積分・加減乗算・根・テイラー展開・極限・記号置換</td></tr>
+  <tr><td><strong>Statistics</strong></td><td>記述統計・回帰 9 種・仮説検定 11 種・ノンパラメトリック・リスク指標・分布ブラウザ・多変量解析・層別解析・生存分析・メタアナリシス・統計グラフ 17 種</td></tr>
+  <tr><td><strong>SciRef</strong></td><td>科学定数 386 件・科学法則 300 件・単位換算 532 単位・周期表 118 元素</td></tr>
+  <tr><td><strong>Graph</strong></td><td>y=f(x)・パラメトリック・極座標・陰関数・不等式・数列・3D・Trace・Zoom・G-Solve</td></tr>
+  <tr><td><strong>Tools</strong></td><td>スプレッドシート 45×26・μLisp インタプリタ・Wi-Fi / Maxima 連携・設定（NVS 永続化）</td></tr>
+</table>
+
+<h2>インストール</h2>
+
+<h3>必要なもの</h3>
+<ul>
+  <li>M5Stack Cardputer-Adv（ESP32-S3FN8, 8MB Flash）</li>
+  <li>USB-C ケーブル</li>
+  <li>PC（書き込み用）</li>
+  <li>microSD カード（任意）</li>
+</ul>
+
+<h3>方法 1: M5Stack Launcher（マルチブート対応・推奨）</h3>
+<p>Launcher を使うと、PoMaS と他のファームウェアを SD カードで切り替えて使えます。</p>
+<ol>
+  <li><a href="https://github.com/bmorcelli/Launcher/releases">Launcher Releases</a> から <code>Launcher-Cardputer.bin</code> をダウンロード</li>
+  <li>M5Burner または esptool で Launcher を書き込み</li>
+  <li>PoMaS の <code>.bin</code> を SD カードのルートにコピー</li>
+  <li>電源 ON → <code>Enter</code> で Launcher 起動 → PoMaS を選択</li>
+</ol>
+
+<h3>方法 2: esptool で直接書き込み</h3>
+<ol>
+  <li><a href="https://github.com/espressif/esptool">esptool</a> をインストール</li>
+  <li><a href="https://github.com/jpeqtx/PoMaS/releases/latest">Releases</a> から <code>.bin</code> をダウンロード</li>
+  <li>Cardputer-Adv を USB 接続</li>
+  <li>以下を実行：</li>
+</ol>
+<pre><code>esptool.py --chip esp32s3 --port COM3 --baud 921600 write_flash --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 pomas_0_92.ino.bin</code></pre>
+<p><code>COM3</code> は環境に合わせて変更してください。</p>
+
+<h2>リリース情報</h2>
+
+<h3>v0.92（初公開）</h3>
+<ul>
+  <li><strong>Paper UI v2</strong> を適用（淡ミント紙背景 + グラファイト文字 + ミントアクセント）</li>
+  <li>包括的バグ修正（Critical 6 件、High 10 件、Medium / Low 40 件以上）</li>
+  <li>μLisp GC の安全性向上（λ.env マーク、Env マーク&スイープ）</li>
+  <li>入力検証の強化（if / cond / let / define / lambda / 算術関数）</li>
+  <li>グラフの陰関数描画修正、Square aspect オプション追加</li>
+  <li>統計の各種計算修正（tDist、qrEig、VIF、chiIndep 等）</li>
+  <li>ESC カスケード防止、長文の自動切り詰め</li>
+</ul>
+
+<h2>操作マニュアル</h2>
+
+<p>全 17 章の取扱説明書を用意しています。<a href="manual/">マニュアル目次</a> から参照してください。</p>
 
 <div class="grid">
-  <div class="card">
-    <h3>第 I 部 はじめに</h3>
-    <ul>
-      <li><a href="manual/#/01_intro">第1章 はじめに</a></li>
-      <li><a href="manual/#/02_hardware">第2章 ハードウェア</a></li>
-      <li><a href="manual/#/03_basic">第3章 基本操作</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>第 II 部 キーボード</h3>
-    <ul>
-      <li><a href="manual/#/04_keyboard">第4章 キーボード詳細</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>第 III 部 Calculator</h3>
-    <ul>
-      <li><a href="manual/#/05_calculator">第5章 電卓 基本</a></li>
-      <li><a href="manual/#/06_calculator_adv">第6章 電卓 応用</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>第 IV 部 CAS</h3>
-    <ul>
-      <li><a href="manual/#/07_cas">第7章 CAS</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>第 V 部 Statistics</h3>
-    <ul>
-      <li><a href="manual/#/08_statistics">第8章 統計 基本</a></li>
-      <li><a href="manual/#/09_statistics_adv">第9章 統計 応用</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>第 VI 部 Graph</h3>
-    <ul>
-      <li><a href="manual/#/10_graph">第10章 グラフ</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>第 VII 部 SciRef</h3>
-    <ul>
-      <li><a href="manual/#/11_sciref">第11章 科学資料</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>第 VIII 部 Tools</h3>
-    <ul>
-      <li><a href="manual/#/12_tools">第12章 ツール</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>第 IX 部 設定</h3>
-    <ul>
-      <li><a href="manual/#/13_settings">第13章 設定</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>第 X 部 リファレンス</h3>
-    <ul>
-      <li><a href="manual/#/14_errors">第14章 エラーメッセージ</a></li>
-      <li><a href="manual/#/15_glossary">第15章 用語集</a></li>
-      <li><a href="manual/#/16_examples">第16章 実用例集</a></li>
-      <li><a href="manual/#/17_appendix">第17章 付録</a></li>
-    </ul>
-  </div>
+  <div class="card"><h3>第 I 部 はじめに</h3><ul>
+    <li><a href="manual/#/01_intro">第1章 はじめに</a></li>
+    <li><a href="manual/#/02_hardware">第2章 ハードウェア</a></li>
+    <li><a href="manual/#/03_basic">第3章 基本操作</a></li>
+  </ul></div>
+  <div class="card"><h3>第 II 部 キーボード</h3><ul>
+    <li><a href="manual/#/04_keyboard">第4章 キーボード詳細</a></li>
+  </ul></div>
+  <div class="card"><h3>第 III 部 Calculator</h3><ul>
+    <li><a href="manual/#/05_calculator">第5章 電卓 基本</a></li>
+    <li><a href="manual/#/06_calculator_adv">第6章 電卓 応用</a></li>
+  </ul></div>
+  <div class="card"><h3>第 IV 部 CAS</h3><ul>
+    <li><a href="manual/#/07_cas">第7章 CAS</a></li>
+  </ul></div>
+  <div class="card"><h3>第 V 部 Statistics</h3><ul>
+    <li><a href="manual/#/08_statistics">第8章 統計 基本</a></li>
+    <li><a href="manual/#/09_statistics_adv">第9章 統計 応用</a></li>
+  </ul></div>
+  <div class="card"><h3>第 VI 部 Graph</h3><ul>
+    <li><a href="manual/#/10_graph">第10章 グラフ</a></li>
+  </ul></div>
+  <div class="card"><h3>第 VII 部 SciRef</h3><ul>
+    <li><a href="manual/#/11_sciref">第11章 科学資料</a></li>
+  </ul></div>
+  <div class="card"><h3>第 VIII 部 Tools</h3><ul>
+    <li><a href="manual/#/12_tools">第12章 ツール</a></li>
+  </ul></div>
+  <div class="card"><h3>第 IX 部 設定</h3><ul>
+    <li><a href="manual/#/13_settings">第13章 設定</a></li>
+  </ul></div>
+  <div class="card"><h3>第 X 部 リファレンス</h3><ul>
+    <li><a href="manual/#/14_errors">第14章 エラーメッセージ</a></li>
+    <li><a href="manual/#/15_glossary">第15章 用語集</a></li>
+    <li><a href="manual/#/16_examples">第16章 実用例集</a></li>
+    <li><a href="manual/#/17_appendix">第17章 付録</a></li>
+  </ul></div>
 </div>
 
-<h2>🔗 Links</h2>
+<h2>リンク</h2>
 <ul>
-  <li><a href="https://github.com/jpeqtx/PoMaS">GitHub Repository</a></li>
-  <li><a href="https://github.com/jpeqtx/PoMaS/releases">Releases / Firmware</a></li>
-  <li><a href="https://github.com/jpeqtx/PoMaS#readme">README</a></li>
+  <li><a href="https://github.com/jpeqtx/PoMaS">GitHub リポジトリ</a></li>
+  <li><a href="https://github.com/jpeqtx/PoMaS/releases/latest">最新版をダウンロード</a></li>
+  <li><a href="https://github.com/jpeqtx/PoMaS/issues">Issues</a></li>
 </ul>
 
 <footer>
-  <p>PoMaS v0.92 — Paper UI v2 — by <a href="https://github.com/jpeqtx">jpeqtx</a></p>
+  <p>PoMaS v0.92 — Paper UI v2 — by YNGMT（<a href="https://github.com/jpeqtx">@jpeqtx</a>）</p>
   <p>MIT License</p>
 </footer>
 
