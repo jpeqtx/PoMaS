@@ -51,6 +51,20 @@ esptool.py --chip esp32s3 --port COM3 --baud 921600 \
 
 `COM3` は環境に合わせて変更してください。
 
+
+### M5Stack Launcher を使ったインストール（マルチブート対応）
+
+サードパーティ製の **M5Stack Launcher** を一度書き込んでおくと、以降は`.bin`ファイルをSDカードに入れるだけで、PoMaSを含む複数のファームウェアを切り替えて使えるようになります。
+
+1. [Launcher Releases](https://github.com/bmorcelli/Launcher/releases) から `Launcher-Cardputer.bin` をダウンロード
+2. M5Burner または esptool で Launcher を書き込み
+3. PoMaSの`.bin`ファイル（`pomas_0_92.ino.bin` または `pomas_0_92.ino.merged.bin`）をSDカードのルートにコピー
+4. Cardputerの電源を入れ、Launcher起動画面で `Enter` を押してLauncherを起動
+5. SDカード内の`.bin`ファイルを選択してインストール
+
+インストール後は、起動時に何も押さなければ最後にインストールしたファームウェアが自動起動します。Launcherに戻りたいときは、起動時に `Enter` を押してください。
+
+
 ### 基本操作
 
 | キー | 動作 |

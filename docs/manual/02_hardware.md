@@ -63,6 +63,31 @@ Wi-Fi と Bluetooth を内蔵し、比較的高速な処理が可能です。
 G0 ボタンを押しながらリセットボタンを押します。
 これでダウンロードモードに入ります。
 ---
+
+### M5Stack Launcher によるマルチブート
+
+**M5Stack Launcher** は、サードパーティ製のマルチブートファームウェアです。一度書き込めば、SDカードに複数の`.bin`ファイルを置き、起動時に選択して切り替えられるようになります。
+
+| 項目 | 内容 |
+|---|---|
+| 公式リポジトリ | https://github.com/bmorcelli/Launcher |
+| 対応デバイス | Cardputer / Cardputer-Adv |
+| 必要なもの | microSDカード（FAT32、32GB以下推奨） |
+
+#### インストール手順
+
+1. [Releases](https://github.com/bmorcelli/Launcher/releases) から `Launcher-Cardputer.bin` をダウンロード
+2. M5Burner または esptool で Launcher を本体に書き込む
+3. PoMaSの`.bin`ファイルをSDカードにコピー
+4. 電源ON → Launcher画面で `Enter` → SDカード内の`.bin`を選択
+
+#### 注意点
+
+- Launcherを書き込むと、それまでのファームウェアは上書きされます
+- Launcher経由でインストールしたファームウェアは、起動時に何も押さなければ自動起動します
+- Launcherに戻るには、起動時に `Enter` を押します
+
+
 ## 2.3 電源の入れ方
 ### 初回起動
 1. **USB-C ケーブルで充電**（最初は充電が必要）
