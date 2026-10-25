@@ -1,65 +1,112 @@
-# PoMaS 操作マニュアル — 目次
-**M5Stack Cardputer-Adv 用 多機能数学ステーション 完全版**
-本書は、PoMaS を初めて手にする方から、日常的に使い込む方まで、
-あらゆる読者を対象とした AtoZ ガイドです。
-中学生でも読めるよう、専門用語には必ず説明を添えています。
+# PoMaS — Pocket Math Station
+
+**M5Stack Cardputer-Adv 用 多機能数学ステーション**
+
 ---
-## 第 I 部 はじめに
-1. [第1章 はじめに](01_intro.md) — PoMaS とは / 対象読者 / 本書の読み方
-2. [第2章 ハードウェア](02_hardware.md) — 各部名称 / 電源 / 充電 / SD カード / 画面
-3. [第3章 基本操作](03_basic.md) — 起動 / 画面構成 / キーボード / 終了
-## 第 II 部 キーボードと画面
-4. [第4章 キーボード詳細](04_keyboard.md) — 全キーの役割 / Fn キー / 記号入力
-## 第 III 部 Calculator（電卓）
-5. [第5章 電卓 基本](05_calculator.md) — 四則演算 / 関数 / 履歴 / メモリ / 変数
-6. [第6章 電卓 応用](06_calculator_adv.md) — 複素数 / 基数変換 / ビット演算 / RPN / 拡張ツール
-## 第 IV 部 CAS（数式処理）
-7. [第7章 CAS](07_cas.md) — 多項式 / 微分 / 積分 / テイラー / 極限
-## 第 V 部 Statistics（統計）
-8. [第8章 統計 基本](08_statistics.md) — リスト / 記述統計 / 回帰 / 検定
-9. [第9章 統計 応用](09_statistics_adv.md) — 多変量 / 層別 / 生存 / メタアナリシス / グラフ 17 種
-## 第 VI 部 Graph（グラフ）
-10. [第10章 グラフ](10_graph.md) — y=f(x) / param / polar / implicit / G-Solve
-## 第 VII 部 Scientific Reference（科学資料）
-11. [第11章 科学資料](11_sciref.md) — 定数 / 法則 / 単位 / 周期表
-## 第 VIII 部 Tools（ツール）
-12. [第12章 ツール](12_tools.md) — スプレッドシート / μLisp / Wi-Fi
-## 第 IX 部 設定とその他
-13. [第13章 設定](13_settings.md) — 角度 / 表示形式 / NVS 永続化
-## 第 X 部 リファレンス
-14. [第14章 エラーメッセージ一覧](14_errors.md) — 全エラーと対処
-15. [第15章 用語集](15_glossary.md) — 五十音・ABC 順
-16. [第16章 実用例集](16_examples.md) — 数学 / 統計 / 科学 / プログラム
-17. [第17章 付録](17_appendix.md) — 関数一覧 / キー早見表 / 記号一覧
+
+## 概要
+
+PoMaS（ポマス、Pocket Math Station）は、M5Stack Cardputer-Adv 上で動作する多機能関数電卓です。
+数式計算から CAS、統計解析、グラフ描画、科学資料検索、μLisp インタプリタまで、
+数学・科学の作業を 1 台に統合しています。
+
+- 手のひらサイズ（約 85 × 55 × 15 mm）
+- 物理キーボードによる高速入力
+- 明るい Paper UI（目に優しい配色）
+- オフラインで全機能が動作
+
 ---
-## 表記について
-本書では以下の表記を用います。
-| 表記 | 意味 |
+
+## 主な機能
+
+| モード | 機能 |
 |---|---|
-| `Fn + Esc` | Fn キーを押しながら Esc キーを押す |
-| **太字** | 重要な用語 / 注意すべき操作 |
-| `コード体` | 画面に表示される文字、または入力する文字 |
-| 💡 | 補足・ヒント |
-| ⚠️ | 注意事項 |
-| 📝 | 練習問題・具体例 |
+| **Calculator** | 四則演算・関数・履歴・メモリ・変数 A〜J・Ans バンク・複素数・基数変換・ビット演算・RPN・拡張ツール（方程式 / 数値解析 / 行列 / 幾何 / 確率 / 素因数） |
+| **CAS** | 多項式の評価・微分・積分・加減乗算・根・テイラー展開・極限・記号置換 |
+| **Statistics** | 記述統計・回帰 9 種・仮説検定 11 種・ノンパラメトリック・リスク指標・分布ブラウザ・多変量解析・層別解析・生存分析・メタアナリシス・統計グラフ 17 種・CSV ストリーム |
+| **SciRef** | 科学定数 386 件・科学法則 300 件・単位換算 532 単位・周期表 118 元素 |
+| **Graph** | y=f(x)・パラメトリック・極座標・陰関数・不等式・数列・3D・Trace・Zoom・G-Solve |
+| **Tools** | スプレッドシート 45×26・μLisp インタプリタ・Wi-Fi / Maxima 連携・電源情報・設定（NVS 永続化） |
+
 ---
-## 読者別おすすめルート
-### 🎓 はじめての方向け（中学生〜）
-第1章 → 第2章 → 第3章 → 第5章 → 第6章
-### 📊 統計を使いたい方向け
-第1章 → 第2章 → 第3章 → 第8章 → 第9章 → 第10章
-### 🔬 科学計算を使いたい方向け
-第1章 → 第2章 → 第3章 → 第5章 → 第7章 → 第11章
-### 💻 プログラミングしたい方向け
-第1章 → 第2章 → 第3章 → 第12章
-### 📖 困ったとき
-第14章（エラー）→ 第15章（用語集）
+
+## インストール
+
+### 必要なもの
+
+- M5Stack Cardputer-Adv（ESP32-S3FN8, 8MB Flash）
+- USB-C ケーブル
+- PC（書き込み用）
+- microSD カード（任意）
+
+### 方法 1: M5Stack Launcher（マルチブート対応・推奨）
+
+Launcher を使うと、PoMaS と他のファームウェアを SD カードで切り替えて使えます。
+
+1. [Launcher Releases](https://github.com/bmorcelli/Launcher/releases) から `Launcher-Cardputer.bin` をダウンロード
+2. M5Burner または esptool で Launcher を書き込み
+3. PoMaS の `.bin` を SD カードのルートにコピー
+4. 電源 ON → `Enter` で Launcher 起動 → PoMaS を選択
+
+### 方法 2: esptool で直接書き込み
+
+1. [esptool](https://github.com/espressif/esptool) をインストール
+2. [Releases](https://github.com/jpeqtx/PoMaS/releases/latest) から `.bin` をダウンロード
+3. Cardputer-Adv を USB 接続
+4. 以下を実行：
+
+esptool.py --chip esp32s3 --port COM3 --baud 921600 write_flash --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 pomas_0_92.ino.bin
+
+`COM3` は環境に合わせて変更してください。
+
 ---
-## 全 17 章完成
-- 第 I〜X 部構成
-- 各章に練習問題（Q&A）付き
-- 中学生でも読めるレベル
+
+## リリース情報
+
+### v0.92（初公開）
+
+- **Paper UI v2** を適用（淡ミント紙背景 + グラファイト文字 + ミントアクセント）
+- 包括的バグ修正（Critical 6 件、High 10 件、Medium / Low 40 件以上）
+- μLisp GC の安全性向上（λ.env マーク、Env マーク&スイープ）
+- 入力検証の強化（if / cond / let / define / lambda / 算術関数）
+- グラフの陰関数描画修正、Square aspect オプション追加
+- 統計の各種計算修正（tDist、qrEig、VIF、chiIndep 等）
+- ESC カスケード防止、長文の自動切り詰め
+
 ---
-**PoMaS v0.92 — Paper UI v2**
-**Author: jpeqtx**
-[← README に戻る](../../README.md)
+
+## マニュアル
+
+全 17 章の取扱説明書を用意しています。
+サイドバー、または [第1章 はじめに](01_intro.md) から参照してください。
+
+| 部 | 章 |
+|---|---|
+| 第 I 部 はじめに | 1〜3章 |
+| 第 II 部 キーボード | 4章 |
+| 第 III 部 Calculator | 5〜6章 |
+| 第 IV 部 CAS | 7章 |
+| 第 V 部 Statistics | 8〜9章 |
+| 第 VI 部 Graph | 10章 |
+| 第 VII 部 SciRef | 11章 |
+| 第 VIII 部 Tools | 12章 |
+| 第 IX 部 設定 | 13章 |
+| 第 X 部 リファレンス | 14〜17章 |
+
+---
+
+## リンク
+
+- [GitHub リポジトリ](https://github.com/jpeqtx/PoMaS)
+- [最新版をダウンロード](https://github.com/jpeqtx/PoMaS/releases/latest)
+- [Issues](https://github.com/jpeqtx/PoMaS/issues)
+
+---
+
+## ライセンス
+
+MIT License
+
+## 作者
+
+YNGMT（GitHub: [@jpeqtx](https://github.com/jpeqtx)）
