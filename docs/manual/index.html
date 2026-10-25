@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoMaS Manual</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/themes/vue.css">
+<style>
+:root { --theme-color: #2a5c3a; --sidebar-width: 280px; }
+body { background: #f7fef9; }
+.sidebar { background: #f7fef9; border-right: 1px solid #d8e4dc; }
+.sidebar h1 { color: #2a5c3a; }
+.sidebar ul li a { color: #1a3a25; }
+.sidebar ul li.active > a { color: #2a5c3a; font-weight: 600; border-right: 3px solid #2a5c3a; }
+.sidebar ul li strong { color: #2a5c3a; display: block; padding: .3rem 0; }
+.markdown-section h1, .markdown-section h2, .markdown-section h3 { color: #2a5c3a; }
+.markdown-section h1 { border-bottom: 3px solid #2a5c3a; padding-bottom: .4rem; }
+.markdown-section h2 { border-bottom: 1px solid #7ab88a; padding-bottom: .3rem; }
+.markdown-section code { background: #f0f4f1; color: #1a3a25; }
+.markdown-section pre { background: #f0f4f1; border-left: 4px solid #7ab88a; }
+.markdown-section pre code { background: transparent; }
+.markdown-section table th { background: #e3ede6; }
+.markdown-section table th, .markdown-section table td { border: 1px solid #b8c8bc; padding: .4rem .8rem; }
+.markdown-section blockquote { border-left: 4px solid #7ab88a; background: #f0f4f1; padding: .7rem 1rem; color: #333; }
+.markdown-section details { background: #f0f4f1; padding: .5rem 1rem; border-radius: 4px; margin: .5rem 0; }
+.markdown-section summary { cursor: pointer; color: #2a5c3a; font-weight: 600; }
+.search input { border: 1px solid #d8e4dc; }
+.app-nav a { color: #2a5c3a; }
+</style>
+</head>
+<body>
+<div id="app">Loading...</div>
+<script>
+window.$docsify = {
+  name: 'PoMaS Manual',
+  repo: 'jpeqtx/PoMaS',
+  loadSidebar: true,
+  subMaxLevel: 2,
+  homepage: 'index.md',
+  search: { placeholder: 'Search', noData: 'No results' },
+  auto2top: true,
+  copyCode: { buttonText: 'Copy', errorText: 'Failed', successText: 'Copied' },
+  pagination: { previousText: 'Previous', nextText: 'Next', crossChapter: true }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docsify-copy-code"></script>
+<script src="https://cdn.jsdelivr.net/npm/docsify-pagination/dist/docsify-pagination.min.js"></script>
+</body>
+</html>
