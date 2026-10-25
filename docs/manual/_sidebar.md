@@ -4,6 +4,12 @@
 
 ---
 
+- [🏠 ホーム](index.md)
+- [📦 最新版をダウンロード](https://github.com/jpeqtx/PoMaS/releases/latest)
+- [💻 GitHub リポジトリ](https://github.com/jpeqtx/PoMaS)
+
+---
+
 - [ホーム](#/)
 - **第 I 部 はじめに**
   - [第1章 はじめに](01_intro.md)
