@@ -1,2 +1,8 @@
 theme: jekyll-theme-minimal
 markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+exclude:
+  - "*.ps1"
+  - "*.bak*"
