@@ -1,4 +1,4 @@
-# PoMaS — Pocket Math Station
+# PoMaS — Pocket Mathematics Station
 
 **M5Stack Cardputer-Adv 向けのポケット数学ステーション**
 

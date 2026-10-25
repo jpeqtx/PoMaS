@@ -2,7 +2,7 @@
 [← 目次に戻る](#/) | [第2章 ハードウェア →](02_hardware.md)
 ---
 ## 1.1 PoMaS とは
-**PoMaS（ポマス、Pocket Math Station）** は、M5Stack Cardputer-Adv という
+**PoMaS（ポマス、Pocket Mathematics Station）** は、M5Stack Cardputer-Adv という
 手のひらサイズのコンピュータの上で動く、多機能な関数電卓です。
 「関数電卓」と聞いて、どんなものを思い浮かべますか？
 - 学校で使う、sin や cos が計算できる電卓
@@ -115,7 +115,7 @@ PoMaS の機能は、**6 つのモード** に分かれています。
 ### 確認問題
 📝 **Q1-1**: PoMaS は何の略称ですか？
 <details><summary>答え</summary>
-Pocket Math Station（ポケット数学ステーション）
+Pocket Mathematics Station（ポケット数学ステーション）
 </details>
 📝 **Q1-2**: PoMaS のモードはいくつありますか？
 <details><summary>答え</summary>

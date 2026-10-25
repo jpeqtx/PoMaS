@@ -1,5 +1,5 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
-// ║  PoMaS (Pocket Math Station) ver.0.92                                 ║
+// ║  PoMaS (Pocket Mathematics Station) ver.0.92                          ║
 // ║  Target : M5Stack Cardputer-Adv (ESP32-S3FN8, 8MB Flash)              ║
 // ║  Author : YNGMT                                                       ║
 // ║  Part  1 / 20 ─ 共通ヘッダ・型・GState・補助関数                        ║
@@ -11110,7 +11110,7 @@ void aboutScreen() {
     d.drawString(POMAS_NAME " " POMAS_VER, 4, y); y += 22;
     d.setTextSize(1);
     d.setTextColor(C_FG, C_BG);
-    d.drawString("Pocket Math Station", 4, y); y += 11;
+    d.drawString("Pocket Mathematics Station", 4, y); y += 11;
     d.setTextColor(C_DIM, C_BG);
     d.drawString("for M5 Cardputer-Adv", 4, y); y += 11;
     d.drawString("Modes: Calc/CAS/Stat", 4, y); y += 10;

@@ -1,4 +1,4 @@
-# PoMaS — Pocket Math Station
+# PoMaS — Pocket Mathematics Station
 
 **M5Stack Cardputer-Adv 用 多機能数学ステーション**
 
@@ -6,7 +6,7 @@
 
 ## 概要
 
-PoMaS（ポマス、Pocket Math Station）は、M5Stack Cardputer-Adv 上で動作する多機能関数電卓です。
+PoMaS（ポマス、Pocket Mathematics Station）は、M5Stack Cardputer-Adv 上で動作する多機能関数電卓です。
 数式計算から CAS、統計解析、グラフ描画、科学資料検索、μLisp インタプリタまで、
 数学・科学の作業を 1 台に統合しています。
 
