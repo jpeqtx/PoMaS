@@ -10597,9 +10597,9 @@ public:
         while (true) {
             const char* items[] = {
                 "Set SSID/Pass","Scan networks","Connect","Disconnect",
-                "Status","Send to Maxima (URL)","Back"
+                "Status","Send to Maxima (srv req.)","Back"
             };
-            int s = DM.menu("Wi-Fi / Maxima", items, 7);
+            int s = DM.menu("Wi-Fi/Maxima (srv)", items, 7);
             if (s < 0 || s == 6) return;
             switch (s) {
                 case 0: setCred();    break;
@@ -10777,6 +10777,7 @@ private:
         if (!G.wifiOK || WiFi.status() != WL_CONNECTED) { DM.notify("Not connected", C_ERR); return; }
         char url[128] = "http://YOUR-PROXY-HOST/maxima?expr=";
         if (!DM.inputLine("URL prefix:", url, sizeof(url))) return;
+        if (strstr(url, "YOUR-PROXY-HOST")) { DM.notify("Set proxy URL (see manual)", C_WARN); return; }
         char expr[80] = "diff(sin(x),x)";
         if (!DM.inputLine("Maxima expr:", expr, sizeof(expr))) return;
         char full[256]; int p = strlen(url);
@@ -11151,7 +11152,7 @@ void settingsScreen();
 void toolsMenu() {
     while (true) {
         const char* items[] = {
-            "Spreadsheet (45x26)","uLisp Interpreter","Wi-Fi / Maxima",
+            "Spreadsheet (45x26)","uLisp Interpreter","Wi-Fi/Maxima (srv)",
             "Power / About","Settings (NVS persistent)","Save BMP screenshot now","Back"
         };
         int s = DM.menu("Tools", items, 7);
