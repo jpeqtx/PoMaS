@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<title>PoMaS 操作マニュアル v0.92</title>
+<style>
+@page { size: A4; margin: 18mm 15mm 18mm 15mm; }
+body { font-family: 'Yu Gothic', 'Meiryo', 'MS Gothic', sans-serif; font-size: 10pt; line-height: 1.6; color: #222; }
+h1 { font-size: 22pt; border-bottom: 3px solid #2a5c3a; color: #1a3a25; padding-bottom: 6pt; page-break-after: avoid; }
+h2 { font-size: 16pt; color: #2a5c3a; border-bottom: 2px solid #7ab88a; margin-top: 22pt; padding-bottom: 4pt; page-break-after: avoid; }
+h3 { font-size: 13pt; color: #333; margin-top: 16pt; page-break-after: avoid; }
+h4 { font-size: 11pt; color: #444; margin-top: 12pt; }
+p { margin: 5pt 0; }
+code { font-family: 'Consolas', 'Courier New', monospace; background: #f0f4f1; padding: 1pt 4pt; border-radius: 2pt; font-size: 9pt; }
+pre { background: #f5f7f6; border-left: 4px solid #4a7a5c; padding: 8pt 10pt; overflow-x: auto; page-break-inside: avoid; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; margin: 8pt 0; width: 100%; page-break-inside: avoid; }
+th, td { border: 1px solid #b8c8bc; padding: 4pt 8pt; text-align: left; font-size: 9.5pt; }
+th { background: #e3ede6; font-weight: bold; color: #1a3a25; }
+ul { margin: 4pt 0 8pt 20pt; padding: 0; }
+li { margin: 2pt 0; }
+a { color: #1a5c9a; text-decoration: none; }
+hr { border: none; border-top: 1px solid #c8d4ca; margin: 12pt 0; }
+strong { color: #1a3a25; }
+</style></head>
+<body>
+<h1>PoMaS 謫堺ｽ懊・繝九Η繧｢繝ｫ v0.92</h1>
+<p>**M5Stack Cardputer-Adv 逕ｨ 螟壽ｩ溯・謨ｰ蟄ｦ繧ｹ繝・・繧ｷ繝ｧ繝ｳ 螳悟・迚・*</p>
+<hr>
+<h2>逶ｮ谺｡</h2>
+<p>1. 縺ｯ縺倥ａ縺ｫ</p>
+<p>2. 蜍穂ｽ懃腸蠅・・繧､繝ｳ繧ｹ繝医・繝ｫ</p>
+<p>3. 蝓ｺ譛ｬ謫堺ｽ・</p>
+<p>4. Calculator 繝｢繝ｼ繝・</p>
+<p>5. CAS 繝｢繝ｼ繝・</p>
+<p>6. Statistics 繝｢繝ｼ繝・</p>
+<p>7. Scientific Reference 繝｢繝ｼ繝・</p>
+<p>8. Graph 繝｢繝ｼ繝・</p>
+<p>9. Tools 繝｢繝ｼ繝・</p>
+<p>10. 險ｭ螳夲ｼ・VS 豌ｸ邯壼喧・・</p>
+<p>11. 繝医Λ繝悶Ν繧ｷ繝･繝ｼ繝・ぅ繝ｳ繧ｰ</p>
+<p>12. 莉倬鹸・磯未謨ｰ荳隕ｧ / 繧ｭ繝ｼ譌ｩ隕玖｡ｨ・・</p>
+<hr>
+<h2>1. 縺ｯ縺倥ａ縺ｫ</h2>
+<p>PoMaS・・ocket Math Station・峨・縲｀5Stack Cardputer-Adv 荳翫〒蜍穂ｽ懊☆繧句､壽ｩ溯・髢｢謨ｰ髮ｻ蜊薙〒縺吶・</p>
+<p>謨ｰ蠑剰ｨ育ｮ励・CAS繝ｻ邨ｱ險郁ｧ｣譫舌・繧ｰ繝ｩ繝墓緒逕ｻ繝ｻ遘大ｭｦ雉・侭讀懃ｴ｢繝ｻﾎｼLisp 繧､繝ｳ繧ｿ繝励Μ繧ｿ繧・1 蜿ｰ縺ｫ邨ｱ蜷医＠縺ｦ縺・∪縺吶・</p>
+<p>險ｭ險域晄Φ・・</p>
+<ul>
+<li>**1 逕ｻ髱｢ 1 讖溯・** 窶・諠・ｱ驕主､壹ｒ驕ｿ縺代∬ｿｷ繧上↑縺・UI</li>
+<li>**繧ｭ繝ｼ繝懊・繝牙ｮ檎ｵ・* 窶・繧ｿ繝・メ荳崎ｦ√∝・縺ｦ縺ｮ謫堺ｽ懊′迚ｩ逅・く繝ｼ縺ｧ螳檎ｵ・</li>
+<li>**Paper UI v2** 窶・豺｡繝溘Φ繝育ｴ呵レ譎ｯ + 繧ｰ繝ｩ繝輔ぃ繧､繝域枚蟄励〒髟ｷ譎る俣菴懈･ｭ縺ｫ蜆ｪ縺励＞</li>
+</ul>
+<hr>
+<h2>2. 蜍穂ｽ懃腸蠅・・繧､繝ｳ繧ｹ繝医・繝ｫ</h2>
+<h3>2.1 繝上・繝峨え繧ｧ繧｢隕∽ｻｶ</h3>
+<table>
+<tr>
+<th>鬆・岼</th>
+<th>隕∽ｻｶ</th>
+</tr>
+<tr>
+<td>繝・ヰ繧､繧ｹ</td>
+<td>M5Stack Cardputer-Adv・・SP32-S3FN8・・</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>8 MB</td>
+</tr>
+<tr>
+<td>PSRAM</td>
+<td>髱樊政霈会ｼ・00 隕∫ｴ縺ｾ縺ｧ縺ｮ邨ｱ險医Μ繧ｹ繝茨ｼ・</td>
+</tr>
+<tr>
+<td>逕ｻ髱｢</td>
+<td>ST7789V2 240ﾃ・35 px</td>
+</tr>
+<tr>
+<td>SD 繧ｫ繝ｼ繝・</td>
+<td>莉ｻ諢擾ｼ・AT32, 32GB 莉･荳区耳螂ｨ・・</td>
+</tr>
+</table>
+<h3>2.2 繝輔ぃ繝ｼ繝繧ｦ繧ｧ繧｢譖ｸ縺崎ｾｼ縺ｿ</h3>
+<p>1. <a href="https://github.com/espressif/esptool">esptool</a> 繧偵う繝ｳ繧ｹ繝医・繝ｫ</p>
+<p>2. <a href="https://github.com/jpeqtx/PoMaS/releases">Releases</a> 縺九ｉ <code>PoMaS_v0.92_Cardputer-Adv.bin</code> 繧偵ム繧ｦ繝ｳ繝ｭ繝ｼ繝・</p>
+<p>3. Cardputer-Adv 繧・USB-C 縺ｧ謗･邯・</p>
+<p>4. 譖ｸ縺崎ｾｼ縺ｿ・・</p>
+<pre><code>
+esptool.py --chip esp32s3 --port COM3 --baud 921600 \
+  write_flash --flash_mode dio --flash_freq 80m --flash_size 8MB \
+  0x0 PoMaS_v0.92_Cardputer-Adv.bin
+</code></pre>
+<p><code>COM3</code> 縺ｯ迺ｰ蠅・↓蜷医ｏ縺帙※螟画峩縲・0 繝懊ち繝ｳ繧呈款縺励↑縺後ｉ繝ｪ繧ｻ繝・ヨ縺ｧ繝繧ｦ繝ｳ繝ｭ繝ｼ繝峨Δ繝ｼ繝峨↓蜈･繧後∪縺吶・</p>
+<h3>2.3 襍ｷ蜍・</h3>
+<p>繝ｪ繧ｻ繝・ヨ 竊・繧ｹ繝励Λ繝・す繝･・育ｴ・2.5 遘抵ｼ俄・ 繝｡繧､繝ｳ繝｡繝九Η繝ｼ</p>
+<hr>
+<h2>3. 蝓ｺ譛ｬ謫堺ｽ・</h2>
+<h3>3.1 蜈ｱ騾壹く繝ｼ</h3>
+<table>
+<tr>
+<th>繧ｭ繝ｼ</th>
+<th>蜍穂ｽ・</th>
+</tr>
+<tr>
+<td>`Fn + Esc`・医ヰ繝・け繧ｯ繧ｩ繝ｼ繝茨ｼ・</td>
+<td>謌ｻ繧・/ 繧ｭ繝｣繝ｳ繧ｻ繝ｫ</td>
+</tr>
+<tr>
+<td>`Enter`</td>
+<td>豎ｺ螳・/ 螳溯｡・</td>
+</tr>
+<tr>
+<td>`Del`</td>
+<td>繝舌ャ繧ｯ繧ｹ繝壹・繧ｹ</td>
+</tr>
+<tr>
+<td>`Fn + 謨ｰ蟄輿</td>
+<td>蜷・Δ繝ｼ繝峨・繧ｷ繝ｧ繝ｼ繝医き繝・ヨ</td>
+</tr>
+<tr>
+<td>`;`</td>
+<td>荳・</td>
+</tr>
+<tr>
+<td>`.`</td>
+<td>荳・</td>
+</tr>
+<tr>
+<td>`,`</td>
+<td>蟾ｦ</td>
+</tr>
+<tr>
+<td>`/`</td>
+<td>蜿ｳ</td>
+</tr>
+</table>
+<h3>3.2 繝｡繧､繝ｳ繝｡繝九Η繝ｼ</h3>
+<p>1. <strong>Calculator</strong> 窶・謨ｰ蠑城崕蜊・</p>
+<p>2. <strong>CAS</strong> 窶・謨ｰ蠑丞・逅・</p>
+<p>3. <strong>Statistics</strong> 窶・邨ｱ險郁ｧ｣譫・</p>
+<p>4. <strong>Scientific Reference</strong> 窶・遘大ｭｦ雉・侭</p>
+<p>5. <strong>Graph</strong> 窶・繧ｰ繝ｩ繝墓緒逕ｻ</p>
+<p>6. <strong>Tools</strong> 窶・繧ｹ繝励Ξ繝・ラ繧ｷ繝ｼ繝・/ ﾎｼLisp / Wi-Fi</p>
+<p>7. <strong>About</strong> 窶・繝舌・繧ｸ繝ｧ繝ｳ諠・ｱ</p>
+<hr>
+<h2>4. Calculator 繝｢繝ｼ繝・</h2>
+<h3>4.1 蝓ｺ譛ｬ險育ｮ・</h3>
+<p>蠑上ｒ蜈･蜉帙＠縺ｦ <code>Enter</code>縲ょｯｾ蠢懈ｧ区枚・・</p>
+<table>
+<tr>
+<th>貍皮ｮ怜ｭ・/ 髢｢謨ｰ</th>
+<th>萓・</th>
+</tr>
+<tr>
+<td>蝗帛援貍皮ｮ・</td>
+<td>`2+3*4` 竊・14</td>
+</tr>
+<tr>
+<td>縺ｹ縺堺ｹ・</td>
+<td>`2^10` 竊・1024</td>
+</tr>
+<tr>
+<td>髫惹ｹ・</td>
+<td>`5!` 竊・120</td>
+</tr>
+<tr>
+<td>蜑ｰ菴・</td>
+<td>`10 mod 3` 竊・1</td>
+</tr>
+<tr>
+<td>蟷ｳ譁ｹ譬ｹ</td>
+<td>`sqrt(2)`</td>
+</tr>
+<tr>
+<td>荳芽ｧ帝未謨ｰ</td>
+<td>`sin(pi/2)`, `cos(60)`, `tan(45)`</td>
+</tr>
+<tr>
+<td>蟇ｾ謨ｰ</td>
+<td>`ln(e)`, `log(100)`, `log2(8)`</td>
+</tr>
+<tr>
+<td>邨・粋縺・</td>
+<td>`nCr(5,2)`, `nPr(5,2)`</td>
+</tr>
+<tr>
+<td>邏謨ｰ蛻､螳・</td>
+<td>`isPrime(97)`</td>
+</tr>
+<tr>
+<td>譁・ｭ怜ｮ壽焚</td>
+<td>`pi`, `e`, `euler`</td>
+</tr>
+<tr>
+<td>螟画焚</td>
+<td>`A`縲彖J`, `E` 縺ｯ螟画焚縺ｨ縺励※菴ｿ逕ｨ蜿ｯ</td>
+</tr>
+<tr>
+<td>逶ｴ蜑阪・邨先棡</td>
+<td>`Ans`</td>
+</tr>
+</table>
+<h3>4.2 繧ｷ繝ｧ繝ｼ繝医き繝・ヨ</h3>
+<table>
+<tr>
+<th>繧ｭ繝ｼ</th>
+<th>讖溯・</th>
+</tr>
+<tr>
+<td>`Fn+1`</td>
+<td>險ｭ螳夲ｼ郁ｧ貞ｺｦ繝ｻ陦ｨ遉ｺ蠖｢蠑上・譯∵焚・・</td>
+</tr>
+<tr>
+<td>`Fn+2`</td>
+<td>螻･豁ｴ蜻ｼ縺ｳ蜃ｺ縺暦ｼ域怙螟ｧ 100 莉ｶ・・</td>
+</tr>
+<tr>
+<td>`Fn+3`</td>
+<td>繝｡繝｢繝ｪ M・・+ / M- / MR / MC / Set・・</td>
+</tr>
+<tr>
+<td>`Fn+4`</td>
+<td>螟画焚 A縲廱</td>
+</tr>
+<tr>
+<td>`Fn+5`</td>
+<td>蝓ｺ謨ｰ螟画鋤・・EC / HEX / OCT / BIN・・</td>
+</tr>
+<tr>
+<td>`Fn+6`</td>
+<td>繝薙ャ繝域ｼ皮ｮ暦ｼ・ND / OR / XOR / NOT / SHL / SHR・・</td>
+</tr>
+<tr>
+<td>`Fn+7`</td>
+<td>隍・ｴ謨ｰ貍皮ｮ暦ｼ亥刈貂帑ｹ鈴勁 / 讌ｵ蠖｢蠑・/ 邏ｯ荵・/ 髢｢謨ｰ・・</td>
+</tr>
+<tr>
+<td>`Fn+8`</td>
+<td>諡｡蠑ｵ繝・・繝ｫ・井ｸ玖ｨ假ｼ・</td>
+</tr>
+<tr>
+<td>`Fn+9`</td>
+<td>RPN 繝｢繝ｼ繝牙・譖ｿ</td>
+</tr>
+<tr>
+<td>`Fn+0`</td>
+<td>繝倥Ν繝・</td>
+</tr>
+<tr>
+<td>`Fn+=`</td>
+<td>蛻・焚 竍・蟆乗焚陦ｨ遉ｺ</td>
+</tr>
+<tr>
+<td>`Fn+a`</td>
+<td>Ans 繧貞ｼ上↓謖ｿ蜈･</td>
+</tr>
+<tr>
+<td>`Fn+b`</td>
+<td>Ans 繝舌Φ繧ｯ・域怙螟ｧ 20 莉ｶ・・</td>
+</tr>
+</table>
+<h3>4.3 諡｡蠑ｵ繝・・繝ｫ・・n+8・・</h3>
+<table>
+<tr>
+<th>讖溯・</th>
+<th>蜀・ｮｹ</th>
+</tr>
+<tr>
+<td>譁ｹ遞句ｼ上た繝ｫ繝舌・</td>
+<td>Newton / 莠悟・豕・/ 2縲・ 谺｡譁ｹ遞句ｼ・/ 騾｣遶・1 谺｡譁ｹ遞句ｼ・/ 荳闊ｬ螟夐・ｼ擾ｼ・eg 竕､ 8・・</td>
+</tr>
+<tr>
+<td>謨ｰ蛟､隗｣譫・</td>
+<td>蠕ｮ蛻・/ 遨榊・ / 邱丞柱 / 邱丈ｹ・</td>
+</tr>
+<tr>
+<td>繝吶け繝医Ν繝ｻ陦悟・</td>
+<td>繝峨ャ繝育ｩ・/ 繧ｯ繝ｭ繧ｹ遨・/ 繝弱Ν繝 / 蜉貂帷ｮ・/ 陦悟・荵礼ｮ・/ 陦悟・蠑・/ 騾・｡悟・ / 霆｢鄂ｮ / 髫取焚 / 蝗ｺ譛牙､</td>
+</tr>
+<tr>
+<td>蟷ｾ菴包ｼ・7 蝗ｳ蠖｢・・</td>
+<td>荳芽ｧ貞ｽ｢ 3 遞ｮ / 蝗幄ｧ貞ｽ｢ 5 遞ｮ / 蜀・/ 謇・ｽ｢ / 讌募・ / 迺ｰ / 豁｣螟夊ｧ貞ｽ｢ / 遶倶ｽ・8 遞ｮ / 豁｣螟夐擇菴・5 遞ｮ / 繝医・繝ｩ繧ｹ</td>
+</tr>
+<tr>
+<td>遒ｺ邇・す繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ</td>
+<td>繧ｳ繧､繝ｳ / 繧ｵ繧､繧ｳ繝ｭ / 繧ｬ繝√Ε / 荵ｱ謨ｰ / 豁｣隕丈ｹｱ謨ｰ / 謖・焚荵ｱ謨ｰ / 隱慕函譌･繝代Λ繝峨ャ繧ｯ繧ｹ</td>
+</tr>
+<tr>
+<td>邏蝗謨ｰ蛻・ｧ｣</td>
+<td>64 繝薙ャ繝医∪縺ｧ縺ｮ謨ｴ謨ｰ</td>
+</tr>
+</table>
+<hr>
+<h2>5. CAS 繝｢繝ｼ繝・</h2>
+<p>螟夐・ｼ上・險伜捷蜃ｦ逅・Ａx^3 - 2x + 1` 縺ｮ繧医≧縺ｪ蠑上ｒ蜈･蜉帙・</p>
+<table>
+<tr>
+<th>讖溯・</th>
+<th>隱ｬ譏・</th>
+</tr>
+<tr>
+<td>Eval at x</td>
+<td>螟夐・ｼ上・ x 謖・ｮ夊ｩ穂ｾ｡</td>
+</tr>
+<tr>
+<td>Differentiate</td>
+<td>1 髫主ｰ朱未謨ｰ</td>
+</tr>
+<tr>
+<td>Integrate</td>
+<td>荳榊ｮ夂ｩ榊・・・ C・・</td>
+</tr>
+<tr>
+<td>Add</td>
+<td>2 螟夐・ｼ上・蜥・</td>
+</tr>
+<tr>
+<td>Multiply</td>
+<td>2 螟夐・ｼ上・遨・</td>
+</tr>
+<tr>
+<td>Roots</td>
+<td>譬ｹ・郁､・ｴ謨ｰ蟇ｾ蠢懶ｼ・</td>
+</tr>
+<tr>
+<td>Taylor</td>
+<td>莉ｻ諢城未謨ｰ縺ｮ謨ｰ蛟､繝・う繝ｩ繝ｼ螻暮幕・域ｬ｡謨ｰ 1縲・・・</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>謨ｰ蛟､讌ｵ髯撰ｼ井ｸ｡蛛ｴ讌ｵ髯舌・荳閾ｴ蛻､螳夲ｼ・</td>
+</tr>
+<tr>
+<td>Substitute</td>
+<td>險伜捷鄂ｮ謠幢ｼ井ｾ・ `x` 竊・`y+1`・・</td>
+</tr>
+</table>
+<p>螟夐・ｼ上・譖ｸ蠑丈ｾ具ｼ・</p>
+<ul>
+<li>`1+2x-x^2`</li>
+<li>`3x^2-2x+1`</li>
+<li>`x^3-x`</li>
+</ul>
+<hr>
+<h2>6. Statistics 繝｢繝ｼ繝・</h2>
+<h3>6.1 Lists & Descriptive</h3>
+<ul>
+<li>L1縲廰8 縺ｮ 8 繝ｪ繧ｹ繝医∝推 200 隕∫ｴ・・SRAM 謳ｭ霈画凾 999・・</li>
+<li>謫堺ｽ懶ｼ啻Enter`・育ｷｨ髮・ｼ・ `Del`・亥炎髯､・・ `S`・医た繝ｼ繝茨ｼ・ `A`・郁ｿｽ蜉・・</li>
+<li>霑ｽ蜉譎ゅ・繧ｫ繝ｳ繝槫玄蛻・ｊ縺ｧ隍・焚蛟､蜈･蜉帛庄・啻1, 2, 3, 4`</li>
+<li>險倩ｿｰ邨ｱ險医・繝ｼ繧ｸ 1・嗜, sum, sum2, mean, sd(samp), sd(pop), var(samp), SE, CV, min, max</li>
+<li>險倩ｿｰ邨ｱ險医・繝ｼ繧ｸ 2・啣1, med, Q3, IQR, skew, kurt, mode</li>
+</ul>
+<h3>6.2 Variable Scale</h3>
+<p>蜷・Μ繧ｹ繝医↓蟆ｺ蠎ｦ繧定ｨｭ螳夲ｼ壽ｯ比ｾ・/ 髢馴囈 / 鬆・ｺ・/ 蜷咲ｾｩ</p>
+<h3>6.3 迚ｹ谿雁ｹｳ蝮・</h3>
+<ul>
+<li>驥阪∩莉倥″蟷ｳ蝮・ｼ・1=蛟､, L2=驥阪∩・・</li>
+<li>蟷ｾ菴募ｹｳ蝮・</li>
+<li>隱ｿ蜥悟ｹｳ蝮・</li>
+<li>繝医Μ繝蟷ｳ蝮・ｼ・lpha 0縲・.5・・</li>
+</ul>
+<h3>6.4 Frequency Distribution</h3>
+<p>繝薙Φ謨ｰ謖・ｮ壹〒繝偵せ繝医げ繝ｩ繝 + 鬆ｻ蠎ｦ陦ｨ繧定｡ｨ遉ｺ縲・</p>
+<h3>6.5 Z-Scores</h3>
+<p>謖・ｮ壹Μ繧ｹ繝医・ Z-score 繧貞挨繝ｪ繧ｹ繝医↓菫晏ｭ倥・</p>
+<h3>6.6 Regression・亥屓蟶ｰ・・</h3>
+<table>
+<tr>
+<th>遞ｮ鬘・</th>
+<th>蠑・</th>
+</tr>
+<tr>
+<td>Linear</td>
+<td>y = a + bx</td>
+</tr>
+<tr>
+<td>Quadratic</td>
+<td>y = a + bx + cxﾂｲ</td>
+</tr>
+<tr>
+<td>Power</td>
+<td>y = a ﾂｷ x^b</td>
+</tr>
+<tr>
+<td>Exponential</td>
+<td>y = a ﾂｷ e^(bx)</td>
+</tr>
+<tr>
+<td>Logarithmic</td>
+<td>y = a + bﾂｷln(x)</td>
+</tr>
+<tr>
+<td>Logistic</td>
+<td>logit(y) = a + bx</td>
+</tr>
+<tr>
+<td>Med-Med</td>
+<td>荳ｭ螟ｮ蛟､繝吶・繧ｹ縺ｮ邱壼ｽ｢蝗槫ｸｰ</td>
+</tr>
+<tr>
+<td>Multiple</td>
+<td>螟夐㍾邱壼ｽ｢蝗槫ｸｰ・・ 竕､ 5・・</td>
+</tr>
+<tr>
+<td>Stepwise</td>
+<td>螟画焚蠅怜刈豕輔↓繧医ｋ螟画焚驕ｸ謚・</td>
+</tr>
+</table>
+<p>蜃ｺ蜉幢ｼ啾, b, c, r, rﾂｲ, 莠域ｸｬ蛟､縲よｮ句ｷｮ縺ｮ菫晏ｭ倥ｂ蜿ｯ閭ｽ縲・</p>
+<h3>6.7 Tests・井ｻｮ隱ｬ讀懷ｮ夲ｼ・</h3>
+<table>
+<tr>
+<th>讀懷ｮ・</th>
+<th>蜀・ｮｹ</th>
+</tr>
+<tr>
+<td>z-test (1-sample)</td>
+<td>ﾏ・譌｢遏･縺ｮ 1 讓呎悽讀懷ｮ・</td>
+</tr>
+<tr>
+<td>t-test (1-sample)</td>
+<td>1 讓呎悽 t 讀懷ｮ・</td>
+</tr>
+<tr>
+<td>t-test (2-sample, eq.)</td>
+<td>遲牙・謨｣ 2 讓呎悽 t 讀懷ｮ・</td>
+</tr>
+<tr>
+<td>Welch's t-test</td>
+<td>荳咲ｭ牙・謨｣ 2 讓呎悽 t 讀懷ｮ・</td>
+</tr>
+<tr>
+<td>Paired t-test</td>
+<td>蟇ｾ蠢懊≠繧・t 讀懷ｮ・</td>
+</tr>
+<tr>
+<td>F-test</td>
+<td>蛻・淵豈疲､懷ｮ・</td>
+</tr>
+<tr>
+<td>One-way ANOVA</td>
+<td>荳蜈・・鄂ｮ蛻・淵蛻・梵</td>
+</tr>
+<tr>
+<td>Two-way ANOVA</td>
+<td>莠悟・驟咲ｽｮ蛻・淵蛻・梵</td>
+</tr>
+<tr>
+<td>Chi-Square GOF</td>
+<td>驕ｩ蜷亥ｺｦ讀懷ｮ・</td>
+</tr>
+<tr>
+<td>Chi-Square Independence</td>
+<td>迢ｬ遶区ｧ讀懷ｮ夲ｼ・ﾃ幼・・</td>
+</tr>
+<tr>
+<td>Fisher's exact (2ﾃ・)</td>
+<td>繝輔ぅ繝・す繝｣繝ｼ豁｣遒ｺ讀懷ｮ・</td>
+</tr>
+</table>
+<p>蜃ｺ蜉幢ｼ壽､懷ｮ夂ｵｱ險磯㍼縲‥f縲｝ 蛟､縲∵怏諢丞愛螳夲ｼ夷ｱ=0.05・・</p>
+<h3>6.8 Non-parametric / Risk</h3>
+<table>
+<tr>
+<th>讖溯・</th>
+<th>蜀・ｮｹ</th>
+</tr>
+<tr>
+<td>Mann-Whitney U</td>
+<td>繝弱Φ繝代Λ 2 鄒､豈碑ｼ・</td>
+</tr>
+<tr>
+<td>Wilcoxon signed rank</td>
+<td>蟇ｾ蠢懊≠繧翫ヮ繝ｳ繝代Λ讀懷ｮ・</td>
+</tr>
+<tr>
+<td>Kruskal-Wallis</td>
+<td>繝弱Φ繝代Λ 3 鄒､莉･荳・</td>
+</tr>
+<tr>
+<td>Friedman</td>
+<td>蜿榊ｾｩ貂ｬ螳壹ヮ繝ｳ繝代Λ</td>
+</tr>
+<tr>
+<td>Sign test</td>
+<td>隨ｦ蜿ｷ讀懷ｮ・</td>
+</tr>
+<tr>
+<td>Spearman correlation</td>
+<td>鬆・ｽ咲嶌髢｢</td>
+</tr>
+<tr>
+<td>Kendall tau</td>
+<td>鬆・ｽ咲嶌髢｢・医こ繝ｳ繝峨・繝ｫ・・</td>
+</tr>
+<tr>
+<td>Odds Ratio + 95% CI</td>
+<td>繧ｪ繝・ぜ豈・</td>
+</tr>
+<tr>
+<td>Risk Ratio + 95% CI</td>
+<td>繝ｪ繧ｹ繧ｯ豈・</td>
+</tr>
+<tr>
+<td>Risk Difference + 95% CI</td>
+<td>繝ｪ繧ｹ繧ｯ蟾ｮ</td>
+</tr>
+<tr>
+<td>NNT</td>
+<td>豐ｻ逋ょｿ・ｦ∵焚</td>
+</tr>
+<tr>
+<td>CI (mean)</td>
+<td>蟷ｳ蝮・・菫｡鬆ｼ蛹ｺ髢・</td>
+</tr>
+<tr>
+<td>CI (proportion, Wilson)</td>
+<td>豈皮紫縺ｮ菫｡鬆ｼ蛹ｺ髢・</td>
+</tr>
+</table>
+<h3>6.9 Distributions・亥・蟶・ヶ繝ｩ繧ｦ繧ｶ・・</h3>
+<ul>
+<li>豁｣隕・N(ﾎｼ, ﾏ・</li>
+<li>t 蛻・ｸ・ｼ・f・・</li>
+<li>ﾏ・ｲ 蛻・ｸ・ｼ・f・・</li>
+<li>F 蛻・ｸ・ｼ・1, d2・・</li>
+<li>莠碁・ｼ・, p・・</li>
+<li>繝昴い繧ｽ繝ｳ・夷ｻ・・</li>
+<li>蟷ｾ菴包ｼ・・・</li>
+</ul>
+<p>蜷・・蟶・〒・啀MF/PDF縲，DF縲・・未謨ｰ縲￣DF 繝励Ο繝・ヨ</p>
+<h3>6.10 Multivariate・亥､壼､蛾㍼隗｣譫撰ｼ・</h3>
+<table>
+<tr>
+<th>讖溯・</th>
+<th>蜀・ｮｹ</th>
+</tr>
+<tr>
+<td>PCA</td>
+<td>荳ｻ謌仙・蛻・梵・亥崋譛牙､繝ｻ蟇・ｸ守紫繝ｻ雋闕ｷ驥擾ｼ・</td>
+</tr>
+<tr>
+<td>Factor Analysis</td>
+<td>蝗蟄仙・譫撰ｼ・arimax 蝗櫁ｻ｢・・</td>
+</tr>
+<tr>
+<td>k-means</td>
+<td>k 蟷ｳ蝮・け繝ｩ繧ｹ繧ｿ繝ｪ繝ｳ繧ｰ</td>
+</tr>
+<tr>
+<td>Hierarchical (Ward)</td>
+<td>髫主ｱ､繧ｯ繝ｩ繧ｹ繧ｿ繝ｪ繝ｳ繧ｰ</td>
+</tr>
+<tr>
+<td>Decision Tree</td>
+<td>CART 蝗槫ｸｰ譛ｨ</td>
+</tr>
+</table>
+<h3>6.11 Stratified・亥ｱ､蛻･隗｣譫撰ｼ・</h3>
+<ul>
+<li>Mantel-Haenszel OR・・er-stratum + pooled + Forest plot・・</li>
+<li>Mantel-Haenszel RR</li>
+<li>Food Poisoning Trace・磯｣滉ｸｭ豈貞次蝗鬟溷刀迚ｹ螳夲ｼ・</li>
+<li>Cochran's Q・育焚雉ｪ諤ｧ讀懷ｮ夲ｼ・</li>
+<li>Breslow-Day 讀懷ｮ・</li>
+</ul>
+<h3>6.12 Survival・育函蟄伜・譫撰ｼ・</h3>
+<ul>
+<li>Kaplan-Meier・育函蟄俶峇邱夲ｼ・</li>
+<li>Log-rank 讀懷ｮ・</li>
+<li>Cox 豈比ｾ九ワ繧ｶ繝ｼ繝会ｼ・ 蜈ｱ螟蛾㍼・・</li>
+<li>Median Survival・育函蟄倅ｸｭ螟ｮ蛟､・・</li>
+</ul>
+<h3>6.13 Meta-analysis・医Γ繧ｿ繧｢繝翫Μ繧ｷ繧ｹ・・</h3>
+<ul>
+<li>Inverse variance・亥崋螳壼柑譫懶ｼ・</li>
+<li>DerSimonian-Laird・医Λ繝ｳ繝繝蜉ｹ譫懶ｼ・</li>
+<li>Forest plot</li>
+<li>Funnel plot</li>
+<li>Egger's test・亥・迚医ヰ繧､繧｢繧ｹ・・</li>
+</ul>
+<h3>6.14 Statistical Graphs・・7 遞ｮ・・</h3>
+<p>Histogram / Box-and-Whisker / Scatter / Q-Q / Bar / Pie / Line / Stem-and-leaf / Pareto / ECDF / KDE / Strip / Cumulative / MeanﾂｱSD / Residuals / P-P / Multi-line</p>
+<h3>6.15 CSV Stream Stats</h3>
+<p>SD 繧ｫ繝ｼ繝峨・ CSV 繧定｡悟腰菴阪〒繧ｹ繝医Μ繝ｼ繝溘Φ繧ｰ蜃ｦ逅・ょ・縺斐→縺ｮ邨ｱ險・+ 謖・ｮ・2 蛻励・蝗槫ｸｰ縲・</p>
+<hr>
+<h2>7. Scientific Reference 繝｢繝ｼ繝・</h2>
+<table>
+<tr>
+<th>繧ｫ繝・ざ繝ｪ</th>
+<th>蜀・ｮｹ</th>
+</tr>
+<tr>
+<td>Constants・・86 莉ｶ・・</td>
+<td>迚ｩ逅・/ 謨ｰ蟄ｦ / EE / 螟ｩ譁・/ 諠第弌 / 貅匁ヱ譏・/ 蝨ｰ逅・黄逅・/ 螟ｧ豌・/ 豬ｷ豢・/ 蜈・ｴ / 逕溽黄</td>
+</tr>
+<tr>
+<td>Scientific Laws・・00 莉ｶ・・</td>
+<td>迚ｩ逅・/ 蛹門ｭｦ / 謨ｰ蟄ｦ / 蝨ｰ逅・ｧ大ｭｦ / 螟ｩ譁・/ 逕溽黄 / EE</td>
+</tr>
+<tr>
+<td>Unit Converter・・32 蜊倅ｽ・/ 20 繧ｫ繝・ざ繝ｪ・・</td>
+<td>髟ｷ縺・/ 髱｢遨・/ 菴鍋ｩ・/ 雉ｪ驥・/ 騾溷ｺｦ / 蜉騾溷ｺｦ / 蜉・/ 蝨ｧ蜉・/ 繧ｨ繝阪Ν繧ｮ繝ｼ / 莉穂ｺ狗紫 / 貂ｩ蠎ｦ / 隗貞ｺｦ / 譎る俣 / 諠・ｱ驥・/ 蜻ｨ豕｢謨ｰ / 豬・㍼ / 蟇・ｺｦ / 邊伜ｺｦ / 謾ｾ蟆・ｷ・/ 縺昴・莉・</td>
+</tr>
+<tr>
+<td>Periodic Table・・18 蜈・ｴ・・</td>
+<td>蜈・ｴ險伜捷繝ｻ蜴溷ｭ宣㍼縲ＡY` 縺ｧ Ans 縺ｫ霆｢騾√～B` 縺ｧ Ans 繝舌Φ繧ｯ縺ｸ</td>
+</tr>
+<tr>
+<td>Search by Symbol</td>
+<td>險伜捷繝ｻ蜷榊燕縺ｧ螳壽焚讀懃ｴ｢</td>
+</tr>
+</table>
+<hr>
+<h2>8. Graph 繝｢繝ｼ繝・</h2>
+<h3>8.1 繝｡繝九Η繝ｼ</h3>
+<table>
+<tr>
+<th>鬆・岼</th>
+<th>讖溯・</th>
+</tr>
+<tr>
+<td>Plot current functions</td>
+<td>迴ｾ蝨ｨ縺ｮ髢｢謨ｰ繧偵・繝ｭ繝・ヨ</td>
+</tr>
+<tr>
+<td>Edit functions</td>
+<td>譛螟ｧ 4 譛ｬ縺ｮ髢｢謨ｰ邱ｨ髮・</td>
+</tr>
+<tr>
+<td>Plot type</td>
+<td>謠冗判繧ｿ繧､繝鈴∈謚・</td>
+</tr>
+<tr>
+<td>Range / Window</td>
+<td>遽・峇險ｭ螳・</td>
+</tr>
+<tr>
+<td>Standard window</td>
+<td>-10縲・0</td>
+</tr>
+<tr>
+<td>Trig window</td>
+<td>-2ﾏ縲・ﾏ</td>
+</tr>
+<tr>
+<td>**Square aspect (1:1)**</td>
+<td>逵溷・陦ｨ遉ｺ逕ｨ縺ｫ Y 遽・峇繧定・蜍戊ｪｿ謨ｴ</td>
+</tr>
+<tr>
+<td>G-Solve</td>
+<td>譬ｹ / 讌ｵ蛟､ / 莠､轤ｹ / 螳夂ｩ榊・</td>
+</tr>
+<tr>
+<td>Tangent / Normal</td>
+<td>謗･邱壹・豕慕ｷ・</td>
+</tr>
+<tr>
+<td>Save plot as BMP</td>
+<td>BMP 菫晏ｭ・</td>
+</tr>
+</table>
+<h3>8.2 Plot type</h3>
+<table>
+<tr>
+<th>繧ｿ繧､繝・</th>
+<th>蜈･蜉帑ｾ・</th>
+</tr>
+<tr>
+<td>y = f(x)</td>
+<td>`sin(x)`</td>
+</tr>
+<tr>
+<td>Parametric</td>
+<td>`cos(t);sin(t)` ・医そ繝溘さ繝ｭ繝ｳ蛹ｺ蛻・ｊ・・</td>
+</tr>
+<tr>
+<td>Polar</td>
+<td>`1+cos(t)`</td>
+</tr>
+<tr>
+<td>Implicit</td>
+<td>`x^2+y^2-4`</td>
+</tr>
+<tr>
+<td>Inequality</td>
+<td>`x^2+y^2-1` ・・(x,y) > 0 鬆伜沺蝪励ｊ・・</td>
+</tr>
+<tr>
+<td>Sequence</td>
+<td>`1/n` ・・ 繧剃ｽｿ逕ｨ・・</td>
+</tr>
+<tr>
+<td>3D</td>
+<td>`sin(x)*cos(y)`</td>
+</tr>
+</table>
+<h3>8.3 繝励Ο繝・ヨ荳ｭ縺ｮ謫堺ｽ・</h3>
+<table>
+<tr>
+<th>繧ｭ繝ｼ</th>
+<th>蜍穂ｽ・</th>
+</tr>
+<tr>
+<td>`Z`</td>
+<td>繧ｺ繝ｼ繝繧､繝ｳ</td>
+</tr>
+<tr>
+<td>`X`</td>
+<td>繧ｺ繝ｼ繝繧｢繧ｦ繝・</td>
+</tr>
+<tr>
+<td>`R`</td>
+<td>讓呎ｺ悶え繧｣繝ｳ繝峨え</td>
+</tr>
+<tr>
+<td>`T`</td>
+<td>繝医Ξ繝ｼ繧ｹ ON/OFF</td>
+</tr>
+<tr>
+<td>`B`</td>
+<td>繝懊ャ繧ｯ繧ｹ繧ｺ繝ｼ繝</td>
+</tr>
+<tr>
+<td>`+`</td>
+<td>谺｡髢｢謨ｰ縺ｫ蛻・崛</td>
+</tr>
+<tr>
+<td>`竊秦 / `竊蛋</td>
+<td>繝医Ξ繝ｼ繧ｹ繧ｫ繝ｼ繧ｽ繝ｫ遘ｻ蜍・</td>
+</tr>
+<tr>
+<td>`S`</td>
+<td>BMP 菫晏ｭ・</td>
+</tr>
+</table>
+<h3>8.4 G-Solve</h3>
+<ul>
+<li>Root・育ｬｦ蜿ｷ螟牙喧繧ｹ繧ｭ繝｣繝ｳ + 莠悟・豕包ｼ・</li>
+<li>Maximum・域･ｵ螟ｧ・・</li>
+<li>Minimum・域･ｵ蟆擾ｼ・</li>
+<li>Intersection・・ 髢｢謨ｰ縺ｮ莠､轤ｹ・・</li>
+<li>y at x・・ 謖・ｮ壹〒 y 繧定ｨ育ｮ暦ｼ・</li>
+<li>x at y・・ 謖・ｮ壹〒 x 繧定ｨ育ｮ暦ｼ・</li>
+<li>Definite Integral・亥ｮ夂ｩ榊・・・</li>
+</ul>
+<hr>
+<h2>9. Tools 繝｢繝ｼ繝・</h2>
+<h3>9.1 Spreadsheet・・5ﾃ・6・・</h3>
+<ul>
+<li>繧ｻ繝ｫ蜿ら・・啻A1`, `B3` 縺ｪ縺ｩ</li>
+<li>謨ｰ蠑擾ｼ啻=A1+B1`, `=A1*2` 縺ｪ縺ｩ</li>
+<li>`Enter` 邱ｨ髮・/ `Del` 豸亥悉</li>
+<li>`S` CSV 菫晏ｭ・/ `L` CSV 隱ｭ縺ｿ霎ｼ縺ｿ</li>
+<li>`T` Sheet 竍・L1..L8 逶ｸ莠貞､画鋤</li>
+</ul>
+<h3>9.2 uLisp Interpreter</h3>
+<p>Scheme 鬚ｨ縺ｮ Lisp 繧ｵ繝悶そ繝・ヨ縲・</p>
+<p><strong>蛻ｩ逕ｨ蜿ｯ閭ｽ縺ｪ迚ｹ谿翫ヵ繧ｩ繝ｼ繝</strong>・・</p>
+<ul>
+<li>`define`, `setq`, `lambda`, `let`</li>
+<li>`if`, `cond`, `and`, `or`, `not`</li>
+<li>`while`, `begin`, `progn`, `quote`</li>
+</ul>
+<p><strong>繝薙Ν繝医う繝ｳ髢｢謨ｰ</strong>・・</p>
+<ul>
+<li>邂苓｡難ｼ啻+ - * / mod`</li>
+<li>豈碑ｼ・ｼ啻< > <= >= =`</li>
+<li>繝ｪ繧ｹ繝茨ｼ啻car cdr cons list null? atom? length append reverse nth`</li>
+<li>鬮倬嚴・啻map filter reduce apply`</li>
+<li>謨ｰ蟄ｦ・啻sin cos tan exp log sqrt abs floor ceil round expt pow`</li>
+<li>邨ｱ險茨ｼ啻mean sum sd`</li>
+<li>縺昴・莉厄ｼ啻print save load euler pi random`</li>
+</ul>
+<p>**螳溯｡御ｾ・*・・</p>
+<pre><code>
+(define (make-adder n) (lambda (x) (+ x n)))
+(define add5 (make-adder 5))
+(add5 3)   ; =&gt; 8
+
+(map (lambda (x) (* x x)) '(1 2 3 4 5))   ; =&gt; (1 4 9 16 25)
+(reduce + 0 '(1 2 3 4 5))                  ; =&gt; 15
+</code></pre>
+<p>**GC・医ぎ繝吶・繧ｸ繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ・・*・・</p>
+<ul>
+<li>繧ｻ繝ｫ繝励・繝ｫ・・500 蛟・</li>
+<li>譏守､ｺ逧・`(gc)` 縺ｯ辟｡蜉ｹ蛹厄ｼ亥ｮ牙・諤ｧ縺ｮ縺溘ａ蜑企勁・・</li>
+<li>譫ｯ貂・凾・・*Tools 竊・uLisp 竊・Run GC now** 繧貞ｮ溯｡・</li>
+<li>縺ｾ縺溘・ **Reset interpreter**</li>
+</ul>
+<h3>9.3 Wi-Fi / Maxima</h3>
+<ul>
+<li>SSID / Pass 險ｭ螳・</li>
+<li>繝阪ャ繝医Ρ繝ｼ繧ｯ繧ｹ繧ｭ繝｣繝ｳ・域怙螟ｧ 30 莉ｶ・・</li>
+<li>謗･邯・/ 蛻・妙 / 繧ｹ繝・・繧ｿ繧ｹ</li>
+<li>Maxima 騾｣謳ｺ・医・繝ｭ繧ｭ繧ｷ URL 縺ｯ蜷・・險ｭ螳夲ｼ・</li>
+</ul>
+<h3>9.4 Power / About</h3>
+<ul>
+<li>繝舌ャ繝・Μ繝ｼ谿矩㍼繝ｻ蜈・崕迥ｶ諷・</li>
+<li>PSRAM 譛臥┌</li>
+<li>SD 繧ｫ繝ｼ繝臥憾諷・</li>
+<li>Wi-Fi 迥ｶ諷・</li>
+<li>Free heap</li>
+<li>`R`・售D 蜀崎ｩｦ陦・/ `T`・售D 繝・せ繝・</li>
+</ul>
+<h3>9.5 Settings・・VS 豌ｸ邯壼喧・・</h3>
+<ul>
+<li>Angle: DEG / RAD / GRAD</li>
+<li>Display: Norm / Fix / Sci / Eng</li>
+<li>譯∵焚・・縲・・・</li>
+<li>Norm 1 / 2 蛻・崛</li>
+<li>Save settings now</li>
+<li>Clear NVS</li>
+</ul>
+<hr>
+<h2>10. 險ｭ螳夲ｼ・VS 豌ｸ邯壼喧・・</h2>
+<p>險ｭ螳壹・荳肴尚逋ｺ諤ｧ繧ｹ繝医Ξ繝ｼ繧ｸ・・VS・峨↓菫晏ｭ倥＆繧後∝・襍ｷ蜍募ｾ後ｂ邯ｭ謖√＆繧後∪縺吶・</p>
+<p>螟画峩蠕後・ <strong>Save settings now</strong> 繧貞ｮ溯｡後＠縺ｦ縺上□縺輔＞縲・</p>
+<p>60 遘偵＃縺ｨ縺ｫ閾ｪ蜍穂ｿ晏ｭ倥ｂ襍ｰ繧翫∪縺吶・</p>
+<hr>
+<h2>11. 繝医Λ繝悶Ν繧ｷ繝･繝ｼ繝・ぅ繝ｳ繧ｰ</h2>
+<h3>11.1 襍ｷ蜍輔＠縺ｪ縺・/ 逕ｻ髱｢縺檎悄縺｣證・</h3>
+<ul>
+<li>繝舌ャ繝・Μ繝ｼ谿矩㍼繧堤｢ｺ隱搾ｼ・SB 蜈・崕・・</li>
+<li>G0 繝懊ち繝ｳ + 繝ｪ繧ｻ繝・ヨ縺ｧ蜀崎ｵｷ蜍・</li>
+<li>USB 繧ｷ繝ｪ繧｢繝ｫ縺ｧ bootlog 繧堤｢ｺ隱搾ｼ・15200 bps・・</li>
+</ul>
+<h3>11.2 SD 繧ｫ繝ｼ繝峨′隱崎ｭ倥＆繧後↑縺・</h3>
+<ul>
+<li>FAT32 蠖｢蠑上・2GB 莉･荳九ｒ菴ｿ逕ｨ</li>
+<li>謗･轤ｹ繧呈ｸ・祉</li>
+<li>`Tools 竊・Power 竊・R` 縺ｧ繝ｪ繝医Λ繧､</li>
+<li>`Tools 竊・Power 竊・T` 縺ｧ隱ｭ縺ｿ譖ｸ縺阪ユ繧ｹ繝・</li>
+</ul>
+<h3>11.3 ﾎｼLisp 縺ｧ `ERR: unbound symbol`</h3>
+<ul>
+<li>繧ｻ繝ｫ繝励・繝ｫ譫ｯ貂・・蜿ｯ閭ｽ諤ｧ</li>
+<li>**Tools 竊・uLisp 竊・Run GC now**</li>
+<li>縺ｾ縺溘・ **Reset interpreter**</li>
+</ul>
+<h3>11.4 Wi-Fi 縺ｫ謗･邯壹〒縺阪↑縺・</h3>
+<ul>
+<li>2.4GHz 蟶ｯ縺ｮ縺ｿ蟇ｾ蠢懶ｼ・GHz 荳榊庄・・</li>
+<li>SSID / Pass 繧貞・遒ｺ隱・</li>
+<li>繝ｫ繝ｼ繧ｿ繝ｼ縺ｮ MAC 繝輔ぅ繝ｫ繧ｿ繧堤｢ｺ隱・</li>
+</ul>
+<h3>11.5 繧ｰ繝ｩ繝輔′讌募・縺ｫ縺ｪ繧・</h3>
+<ul>
+<li>**Square aspect (1:1)** 繧帝∈謚・</li>
+<li>縺ｾ縺溘・ Range 繧呈焔蜍戊ｪｿ謨ｴ</li>
+</ul>
+<h3>11.6 邨ｱ險医Μ繧ｹ繝医・荳企剞</h3>
+<ul>
+<li>PSRAM 髱樊政霈峨・縺溘ａ 200 隕∫ｴ縺ｾ縺ｧ</li>
+<li>999 隕∫ｴ縺ｯ PSRAM 謳ｭ霈峨ョ繝舌う繧ｹ縺悟ｿ・ｦ・</li>
+</ul>
+<hr>
+<h2>12. 莉倬鹸</h2>
+<h3>12.1 繧ｭ繝ｼ譌ｩ隕玖｡ｨ</h3>
+<table>
+<tr>
+<th>繧ｭ繝ｼ</th>
+<th>讖溯・</th>
+</tr>
+<tr>
+<td>`Fn + Esc`</td>
+<td>謌ｻ繧・/ 繧ｭ繝｣繝ｳ繧ｻ繝ｫ</td>
+</tr>
+<tr>
+<td>`Enter`</td>
+<td>豎ｺ螳・/ 螳溯｡・</td>
+</tr>
+<tr>
+<td>`Del`</td>
+<td>繝舌ャ繧ｯ繧ｹ繝壹・繧ｹ</td>
+</tr>
+<tr>
+<td>`;`</td>
+<td>荳・</td>
+</tr>
+<tr>
+<td>`.`</td>
+<td>荳・</td>
+</tr>
+<tr>
+<td>`,`</td>
+<td>蟾ｦ</td>
+</tr>
+<tr>
+<td>`/`</td>
+<td>蜿ｳ</td>
+</tr>
+</table>
+<h3>12.2 邨・∩霎ｼ縺ｿ髢｢謨ｰ荳隕ｧ・・alculator・・</h3>
+<p><code>sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, csc, sec, cot, csch, sech, coth, exp, ln, log, log10, log2, sqrt, cbrt, abs, sign, sgn, floor, ceil, round, int, frac, fact, gamma, lgamma, erf, erfc, deg, rad, isPrime, prime, nextPrime, prevPrime, random, randInt, rint, randN, toF, toC, toK, pow, nrt, atan2, hypot, min, max, mod, gcd, lcm, nPr, nCr, logn, randR, if, clamp, dms</code></p>
+<h3>12.3 螳壽焚</h3>
+<ul>
+<li>`pi` 窶・蜀・捉邇・</li>
+<li>`e` 窶・繧ｪ繧､繝ｩ繝ｼ謨ｰ</li>
+<li>`euler` 窶・繧ｪ繧､繝ｩ繝ｼ謨ｰ・医お繧､繝ｪ繧｢繧ｹ・・</li>
+<li>`phi` 窶・鮟・≡豈・</li>
+<li>`gamma` 窶・繧ｪ繧､繝ｩ繝ｼ繝ｻ繝槭せ繧ｱ繝ｭ繝ｼ繝句ｮ壽焚</li>
+<li>`inf` 窶・辟｡髯仙､ｧ</li>
+<li>`nan` 窶・NaN</li>
+<li>`ans` 窶・逶ｴ蜑阪・邨先棡</li>
+<li>`mem` 窶・繝｡繝｢繝ｪ M</li>
+</ul>
+<h3>12.4 螟画焚</h3>
+<ul>
+<li>`A`縲彖J` 窶・繝ｦ繝ｼ繧ｶ繝ｼ螟画焚・亥､ｧ譁・ｭ暦ｼ・</li>
+<li>`a`縲彖j` 窶・繝ｦ繝ｼ繧ｶ繝ｼ螟画焚・亥ｰ乗枚蟄暦ｼ・</li>
+<li>`E` 窶・螟画焚 E・・0.92 莉･髯搾ｼ・</li>
+<li>`x`, `t`, `n` 窶・謨ｰ蠑丞・縺ｮ莠育ｴ・､画焚・域悴螳夂ｾｩ譎・0・・</li>
+</ul>
+<hr>
+<p><strong>PoMaS v0.92 窶・Paper UI v2</strong></p>
+<p><strong>Author: jpeqtx</strong></p>
+
+</body></html>
