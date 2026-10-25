@@ -1,7 +1,7 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  PoMaS (Pocket Math Station) ver.0.92                                 ║
 // ║  Target : M5Stack Cardputer-Adv (ESP32-S3FN8, 8MB Flash)              ║
-// ║  Created: YNGMT (original spec ver.7.1)                               ║
+// ║  Author : YNGMT                                                       ║
 // ║  Part  1 / 20 ─ 共通ヘッダ・型・GState・補助関数                        ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 

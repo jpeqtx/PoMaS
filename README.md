@@ -253,9 +253,9 @@ Issue / Pull Request を歓迎します。
 
 ## 👤 作者
 
-**jpeqtx** — [GitHub](https://github.com/jpeqtx)
+**YNGMT** — [GitHub (@jpeqtx)](https://github.com/jpeqtx)
 
-PoMaS はオリジナル仕様 ver.7.1 をベースに、M5Stack Cardputer-Adv 向けに再実装されました。
+PoMaS は YNGMT によるオリジナル実装です。
 
 ---
 
