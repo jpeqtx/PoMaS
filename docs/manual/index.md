@@ -34,7 +34,7 @@
 
 ## 第 VI 部 Graph（グラフ）
 
-10. 第10章 グラフ — y=f(x) / param / polar / implicit / G-Solve（準備中）
+10. [第10章 グラフ](10_graph.md) — y=f(x) / param / polar / implicit / G-Solve
 
 ## 第 VII 部 Scientific Reference（科学資料）
 
