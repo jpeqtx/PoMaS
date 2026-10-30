@@ -67,3 +67,6 @@ make_*.ps1
 write_index.ps1
 apply_patches.ps1
 PoMaS_引き継書_*.txt
+# 生成物（文字化けのため公開しない）
+MANUAL.pdf
+MANUAL_print.html
