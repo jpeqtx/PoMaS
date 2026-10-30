@@ -69,7 +69,7 @@ PoMaS が表示するエラーメッセージと、その対処法をまとめ�
 ```
 → nil（エラーではなく nil を返す）
 ```
-⚠️ **nil とエラーの区別**
+**nil とエラーの区別**
 一部の関数は不正な引数に対して nil を返します。
 エラーメッセージが出ないからと言って、正しく動いているとは限りません。
 ---
@@ -125,7 +125,7 @@ PoMaS が表示するエラーメッセージと、その対処法をまとめ�
 | `Not connected` | Wi-Fi 未接続 | Connect 実行 |
 | `No networks` | ネットワークなし | スキャン再実行 |
 | `HTTP X` | HTTP エラーコード | X の内容で判断 |
-⚠️ **2.4GHz 帯のみ**
+**2.4GHz 帯のみ**
 5GHz 帯のネットワークには接続できません。
 ---
 ## 14.8 その他のエラー
@@ -554,19 +554,19 @@ PoMaS はエラー自動報告機能を持ちません。クラッシュログ�
 
 ### 確認問題
 
-📝 **Q14-1**: `division by zero` が出たら？
+**Q14-1**: `division by zero` が出たら？
 <details><summary>答え</summary>
 除数を確認。0 で割っていないかチェック。
 </details>
-📝 **Q14-2**: `unbound symbol` が出たら？
+**Q14-2**: `unbound symbol` が出たら？
 <details><summary>答え</summary>
 変数・関数が未定義。先に define で定義する。
 </details>
-📝 **Q14-3**: `μLisp cell pool exhausted` が出たら？
+**Q14-3**: `μLisp cell pool exhausted` が出たら？
 <details><summary>答え</summary>
 Tools → uLisp → Run GC now、または Reset interpreter。
 </details>
-📝 **Q14-4**: `No SD` が出たら？
+**Q14-4**: `No SD` が出たら？
 <details><summary>答え</summary>
 SD カードを挿入して、Tools → Power → R でリトライ。
 </details>

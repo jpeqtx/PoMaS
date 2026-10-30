@@ -403,7 +403,7 @@ SciRef → 5 (Search by Symbol)
 ```
 [1] Unit Converter → Misc (or Density 等)
 ```
-⚠️ **テスラ/ガウスは搭載範囲外**
+**テスラ/ガウスは搭載範囲外**
 電磁気の磁束密度は、Misc カテゴリにも該当がありません。
 必要に応じて、Calculator で直接計算してください。
 （1 T = 10000 G）

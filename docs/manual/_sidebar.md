@@ -1,6 +1,6 @@
-- [🏠 ホーム](index.md)
-- [📦 最新版をダウンロード](https://github.com/jpeqtx/PoMaS/releases/latest)
-- [💻 GitHub リポジトリ](https://github.com/jpeqtx/PoMaS)
+- [ホーム](index.md)
+- [最新版をダウンロード](https://github.com/jpeqtx/PoMaS/releases/latest)
+- [GitHub リポジトリ](https://github.com/jpeqtx/PoMaS)
 
 ---
 

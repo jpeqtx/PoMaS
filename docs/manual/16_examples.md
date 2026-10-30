@@ -767,15 +767,15 @@ NPV = -100 + 30/1.1 + 30/1.1² + ... + 30/1.1⁵
 
 ### 確認問題
 
-📝 **Q16-1**: x² - 5x + 6 = 0 を解く手順は？
+**Q16-1**: x² - 5x + 6 = 0 を解く手順は？
 <details><summary>答え</summary>
 Fn+8 → 1 → 3 (Quadratic) で a=1, b=-5, c=6
 </details>
-📝 **Q16-2**: 円を真円で表示するには？
+**Q16-2**: 円を真円で表示するには？
 <details><summary>答え</summary>
 Graph → Square aspect (1:1) → Implicit で x^2+y^2-4
 </details>
-📝 **Q16-3**: 5 科目の平均を μLisp で計算するには？
+**Q16-3**: 5 科目の平均を μLisp で計算するには？
 <details><summary>答え</summary>
 `(mean '(科目1 科目2 科目3 科目4 科目5))`
 </details>

@@ -70,7 +70,7 @@ https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
 3. **M5Stack by M5Stack** を選択
 4. バージョン **3.3.10** をインストール（PoMaS 0.92 検証済み）
 
-⚠️ **バージョン指定**: PoMaS 0.92 は **M5Stack 3.3.10** で検証されています。3.2.x 系では `SET_LOOP_TASK_STACK_SIZE` マクロの挙動が異なり、uLisp スタック拡張が効かない可能性があります。
+**バージョン指定**: PoMaS 0.92 は **M5Stack 3.3.10** で検証されています。3.2.x 系では `SET_LOOP_TASK_STACK_SIZE` マクロの挙動が異なり、uLisp スタック拡張が効かない可能性があります。
 
 ### PlatformIO の場合
 
@@ -114,7 +114,7 @@ build_flags =
 
 **依存**: SD/FS/SPI/Preferences/WiFi/HTTPClient/NetworkClientSecure は ESP32 コア同梱。
 
-⚠️ **WiFiEspAT 警告**: `WiFiEspAT.disabled_*` フォルダがあると `invalid library: no header files found` 警告が出ますが、ビルドには無害です。気になる場合は該当フォルダを `libraries` 外へ移動してください。
+**WiFiEspAT 警告**: `WiFiEspAT.disabled_*` フォルダがあると `invalid library: no header files found` 警告が出ますが、ビルドには無害です。気になる場合は該当フォルダを `libraries` 外へ移動してください。
 
 ---
 
@@ -271,7 +271,7 @@ enum BaseMode : int { BASE_DEC=10, BASE_HEX=16, BASE_OCT=8, BASE_BIN=2 };
 
 前方宣言と定義の基底型が一致していないと `underlying type mismatch` エラーになります。
 
-⚠️ **新規関数追加時の注意**
+**新規関数追加時の注意**
 
 1. 型定義は使用関数より前に置く
 2. または前方宣言をファイル先頭に追加

@@ -107,7 +107,7 @@ Tools → 1 (Spreadsheet)
 | `=A1*2` | 定数倍 |
 | `=A1/10` | 除算 |
 | `=SUM(...)` は不可 | 関数は非対応 |
-⚠️ **SUM, AVERAGE 等の集計関数は未対応**
+**SUM, AVERAGE 等の集計関数は未対応**
 現バージョンでは、基本的な四則演算のみ対応。
 集計は手動で行うか、Statistics モードを使ってください。
 ### 例: 九九の表を作る
@@ -117,7 +117,7 @@ Tools → 1 (Spreadsheet)
 [3] B2 に =B$1*$A2 のような絶対参照は未対応
 → 各セルに手動で =B1*A2 等を入力
 ```
-⚠️ **絶対参照（$）は未対応**
+**絶対参照（$）は未対応**
 現状では、各セルに個別に数式を入力する必要があります。
 ### CSV 保存（S）
 ```
@@ -387,7 +387,7 @@ MAC: aa:bb:cc:dd:ee:ff
 | SSID not found | SSID 間違い / 範囲外 |
 | Auth failed | パスワード間違い |
 | Timeout | 応答なし |
-⚠️ **2.4GHz 帯のみ対応**
+**2.4GHz 帯のみ対応**
 5GHz 帯の Wi-Fi には接続できません（ESP32-S3 の仕様）。
 ### 切断（4）
 Wi-Fi 接続を切断。
@@ -403,7 +403,7 @@ Wi-Fi 接続を切断。
 → HTTP リクエスト送信
 → 結果表示
 ```
-⚠️ **重要：クライアント側のみ実装（サーバーは各自用意）**
+**重要：クライアント側のみ実装（サーバーは各自用意）**
 PoMaS 側には数式を HTTP GET で送信するクライアントコードのみが実装されています。
 Maxima 本体および HTTP プロキシサーバーは**同梱されていません**。
 デフォルトの URL は `YOUR-PROXY-HOST`（プレースホルダ）です。
@@ -1313,27 +1313,27 @@ Created by YNGMT
 - Power/About: バッテリー・SD 情報
 - Settings: 設定は NVS に永続化
 ### 確認問題
-📝 **Q12-1**: スプレッドシートのセル数を入力するとき、正しい形式は？
+**Q12-1**: スプレッドシートのセル数を入力するとき、正しい形式は？
 <details><summary>答え</summary>
 A1, B3, Z45 のような形式（列の文字 + 行の数字）
 </details>
-📝 **Q12-2**: μLisp で階乗を計算する関数を定義するには？
+**Q12-2**: μLisp で階乗を計算する関数を定義するには？
 <details><summary>答え</summary>
 `(define (fact n) (if (<= n 1) 1 (* n (fact (- n 1)))))`
 </details>
-📝 **Q12-3**: μLisp でセルプールが枯渇したらどうする？
+**Q12-3**: μLisp でセルプールが枯渇したらどうする？
 <details><summary>答え</summary>
 Tools → 2 → 3 (Run GC now) を実行、または Reset interpreter。
 </details>
-📝 **Q12-4**: Wi-Fi 接続で 5GHz 帯が使えない理由は？
+**Q12-4**: Wi-Fi 接続で 5GHz 帯が使えない理由は？
 <details><summary>答え</summary>
 ESP32-S3 が 2.4GHz 帯のみ対応のため。
 </details>
-📝 **Q12-5**: Maxima 連携を使うには何が必要？
+**Q12-5**: Maxima 連携を使うには何が必要？
 <details><summary>答え</summary>
 Maxima サーバーをセルフホストし、URL プレフィックスを設定する。
 </details>
-📝 **Q12-6**: 画面のスクリーンショットを保存するには？
+**Q12-6**: 画面のスクリーンショットを保存するには？
 <details><summary>答え</summary>
 Tools → 6、または各画面で S キー。
 </details>
