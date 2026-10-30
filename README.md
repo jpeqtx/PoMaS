@@ -1,6 +1,6 @@
 # PoMaS — Pocket Mathematics Station
 
-**📖 マニュアル（オンライン）:** https://jpeqtx.github.io/PoMaS/
+**マニュアル（オンライン）:** https://jpeqtx.github.io/PoMaS/
 
 
 [![Version](https://img.shields.io/badge/version-0.92-2a5c3a)](https://github.com/jpeqtx/PoMaS/releases/latest)
