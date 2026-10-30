@@ -1,5 +1,8 @@
 # PoMaS — Pocket Mathematics Station
 
+**📖 マニュアル（オンライン）:** https://jpeqtx.github.io/PoMaS/
+
+
 [![Version](https://img.shields.io/badge/version-0.92-2a5c3a)](https://github.com/jpeqtx/PoMaS/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-M5Stack%20Cardputer--Adv-1a5c9a)](https://m5stack.com/)
 [![License](https://img.shields.io/badge/license-MIT-2a5c3a)](LICENSE)
