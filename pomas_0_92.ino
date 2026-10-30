@@ -4,7 +4,6 @@
 // ║  Author : YNGMT                                                       ║
 // ║  Part  1 / 20 ─ 共通ヘッダ・型・GState・補助関数                        ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 #include <M5Cardputer.h>
 #include <M5GFX.h>
 #include <SPI.h>
@@ -17,13 +16,20 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <string.h>
-
 #include "splash_data.h"
-
+// --- Forward decls for ctags-generated prototypes ---
+enum BaseMode : int;
+struct LawEntry;
+// ----------------------------------------------------
+#if defined(SET_LOOP_TASK_STACK_SIZE)
+  SET_LOOP_TASK_STACK_SIZE(32768);
+  #define POMAS_ULISP_MAX_DEPTH 400
+#else
+  #define POMAS_ULISP_MAX_DEPTH 100
+#endif
 #define POMAS_VER  "0.92"
 #define POMAS_NAME "PoMaS"
 #define POMAS_CRED "Created by YNGMT"
-
 struct LawEntry {
     const char* name;
     const char* formula;
@@ -35,7 +41,6 @@ struct LawEntry {
 #define SD_MOSI  14
 #define SD_SCK   40
 #define SD_MISO  39
-
 struct SdGuard {
     SdGuard() { M5Cardputer.Display.endWrite(); }
 };
@@ -45,7 +50,6 @@ static const int LCD_H   = 135;
 static const int HDR_H   = 16;
 static const int FTR_H   = 14;
 static const int BODY_X  = 2;
-
 // ────────────────────────────────────────────────────────────────
 //  PoMaS Paper UI v2 ─ 配色パレット (RGB565)
 //  ・紙のような明るい背景 + グラファイト文字 + ミントのアクセント
@@ -70,28 +74,25 @@ static const int BODY_X  = 2;
 #define C_LINE     0xE71C   // 罫線 (極淡、行セパレータ)
 #define C_SHADOW   0xDEFB   // 影 (通知/ダイアログ用)
 #define C_CHIP     0xDFFE   // チップ背景 (バッジ用)
-
 #define S_BG       0x10A4
 #define S_HDR      0x18E3
 #define S_FG       0xEF5D
 #define S_DIM      0x6B6D
 #define S_ACC      0x07FF
 #define S_ACC2     0xFD20
-
 #define KEY_BS    0x08
 #define IS_ESC    M5Cardputer.Keyboard.isKeyPressed('`')
 #define IS_UP     M5Cardputer.Keyboard.isKeyPressed(';')
 #define IS_DOWN   M5Cardputer.Keyboard.isKeyPressed('.')
 #define IS_LEFT   M5Cardputer.Keyboard.isKeyPressed(',')
 #define IS_RIGHT  M5Cardputer.Keyboard.isKeyPressed('/')
-
-#define LIST_MAX        999
+#define LIST_MAX        300
 #define HIST_MAX        100
 #define UNDO_MAX        20
 #define VAR_COUNT       10
 #define MAT_MAX         10
 #define VEC_MAX         10
-#define STAT_LISTS      8
+#define STAT_LISTS      32
 #define ANS_BANK_MAX    20
 #define MULTIREG_MAX    5
 #define META_MAX        50
@@ -105,15 +106,13 @@ static const int BODY_X  = 2;
 #define SS_ROWS         45
 #define SS_COLS         26
 #define ULISP_CELLS     2500
-
 enum AppMode   { MODE_MENU=0, MODE_CALC, MODE_CAS, MODE_STAT, MODE_SCIREF, MODE_GRAPH };
 enum AngleMode { DEG=0, RAD=1, GRAD=2 };
 enum DispMode  { DISP_NORM=0, DISP_FIX, DISP_SCI, DISP_ENG };
-enum BaseMode  { BASE_DEC=10, BASE_HEX=16, BASE_OCT=8, BASE_BIN=2 };
+enum BaseMode : int { BASE_DEC=10, BASE_HEX=16, BASE_OCT=8, BASE_BIN=2 };
 enum VarScale  { SCALE_RATIO=0, SCALE_INTERVAL, SCALE_ORDINAL, SCALE_NOMINAL };
 enum InputMode { INPUT_ALG=0, INPUT_RPN };
 enum TestSide  { TS_TWO=0, TS_UPPER, TS_LOWER };
-
 struct Fraction {
     long long num;
     long long den;
@@ -125,12 +124,14 @@ struct Fraction {
         num = n; den = d;
         reduce();
     }
+
     static long long gcdLL(long long a, long long b) {
         if (a < 0) a = -a;
         if (b < 0) b = -b;
         while (b) { long long t = a % b; a = b; b = t; }
         return a ? a : 1;
     }
+
     void reduce() {
         if (den < 0) { num = -num; den = -den; }
         long long g = gcdLL(num, den);
@@ -142,7 +143,6 @@ struct Fraction {
     Fraction operator*(const Fraction& o) const { return Fraction(num*o.num, den*o.den); }
     Fraction operator/(const Fraction& o) const { return Fraction(num*o.den, den*o.num); }
     bool     operator==(const Fraction& o) const { return num*o.den == o.num*den; }
-    Fraction neg() const { return Fraction(-num, den); }
     double   toDouble() const { return (double)num / (double)den; }
     void toString(char* out, int n, bool mixed = false) const {
         if (den == 1) { snprintf(out, n, "%lld", num); return; }
@@ -154,6 +154,7 @@ struct Fraction {
             snprintf(out, n, "%lld/%lld", num, den);
         }
     }
+
     static Fraction fromDouble(double v, double tol = 1e-9, long long maxDen = 1000000LL) {
         if (isnan(v) || isinf(v)) return Fraction(0,1);
         bool neg = v < 0; if (neg) v = -v;
@@ -185,6 +186,7 @@ struct Complex {
     Complex operator*(const Complex& o) const { return Complex(re*o.re-im*o.im, re*o.im+im*o.re); }
     Complex operator/(const Complex& o) const {
         double d = o.re*o.re + o.im*o.im;
+        if (d < 1e-300) return Complex(NAN, NAN);
         return Complex((re*o.re+im*o.im)/d, (im*o.re-re*o.im)/d);
     }
     Complex conj() const { return Complex(re, -im); }
@@ -194,7 +196,6 @@ struct Complex {
         return Complex(r*cos(theta), r*sin(theta));
     }
     Complex powN(double n) const { return fromPolar(::pow(abs(), n), arg()*n); }
-    Complex sqrtC()        const { return fromPolar(sqrt(abs()), arg()*0.5); }
     Complex expC()         const { return Complex(::exp(re)*cos(im), ::exp(re)*sin(im)); }
     Complex logC()         const { return Complex(::log(abs()), arg()); }
     Complex sinC() const { return Complex(::sin(re)*::cosh(im), ::cos(re)*::sinh(im)); }
@@ -220,6 +221,7 @@ struct Polynomial {
         deg = 0;
         for (int i=POLY_MAX; i>=0; i--) if (fabs(c[i]) > 1e-15) { deg=i; break; }
     }
+
     double  eval(double x) const {
         double r = 0;
         for (int i=deg; i>=0; i--) r = r*x + c[i];
@@ -264,6 +266,7 @@ struct Polynomial {
         r.normalize();
         return r;
     }
+
     void toString(char* out, int n) const {
         out[0] = 0;
         bool first = true;
@@ -318,9 +321,9 @@ struct GState {
     bool       psramOK = false;
     bool       wifiOK = false;
     bool       fracDisplay = false;
+    int        autoOffMin = 10;
     char       wifiSSID[33] = {0};
     char       wifiPASS[33] = {0};
-
     double  ans  = 0;
     Complex ansC = {0,0};
     bool    ansComplex = false;
@@ -328,17 +331,13 @@ struct GState {
     bool    ansFracValid = false;
     double  mem  = 0;
     double  vars[VAR_COUNT] = {0};
-
     double bank[ANS_BANK_MAX] = {0};
     char   bankLabel[ANS_BANK_MAX][16] = {{0}};
     int    bankN = 0;
-
     HistoryEntry hist[HIST_MAX];
     int          histN = 0;
-
     double rpnStk[4] = {0,0,0,0};
     int    rpnSp = 0;
-
     double  vecA[VEC_MAX] = {0};
     double  vecB[VEC_MAX] = {0};
     int     vecAdim = 3, vecBdim = 3;
@@ -346,15 +345,11 @@ struct GState {
     double  matB[MAT_MAX*MAT_MAX] = {0};
     int     matAr = 0, matAc = 0;
     int     matBr = 0, matBc = 0;
-
     StatColumn stat[STAT_LISTS];
     int        statCapacity = 0;
-
     char*  ssData[SS_ROWS][SS_COLS] = {{nullptr}};
     bool   ssInitialized = false;
-
     char   cwd[64] = "/";
-
     bool allocStat(int cap = LIST_MAX) {
         freeStat();
         for (int i = 0; i < STAT_LISTS; i++) {
@@ -372,6 +367,7 @@ struct GState {
         statCapacity = cap;
         return true;
     }
+
     void freeStat() {
         for (int i = 0; i < STAT_LISTS; i++) {
             if (stat[i].data) { free(stat[i].data); stat[i].data = nullptr; }
@@ -380,12 +376,14 @@ struct GState {
         }
         statCapacity = 0;
     }
+
     void freeSS() {
         for (int r=0; r<SS_ROWS; r++)
             for (int c=0; c<SS_COLS; c++)
                 if (ssData[r][c]) { free(ssData[r][c]); ssData[r][c] = nullptr; }
         ssInitialized = false;
     }
+
     void setSS(int r, int c, const char* expr) {
         if (r<0 || r>=SS_ROWS || c<0 || c>=SS_COLS) return;
         if (ssData[r][c]) { free(ssData[r][c]); ssData[r][c] = nullptr; }
@@ -395,6 +393,7 @@ struct GState {
             if (ssData[r][c]) strcpy(ssData[r][c], expr);
         }
     }
+
     void pushHist(const char* expr, double v, bool ok = true,
                   bool isC = false, double imag = 0) {
         int idx;
@@ -409,6 +408,7 @@ struct GState {
         hist[idx].isComplex = isC;
         hist[idx].imag = imag;
     }
+
     void resetVars() { for (int i=0;i<VAR_COUNT;i++) vars[i]=0; mem=0; }
     void resetStat() { for (int i=0;i<STAT_LISTS;i++) stat[i].count=0; }
     void resetAll() {
@@ -425,13 +425,53 @@ struct GState {
         for (int i = 0; i < 4; i++) rpnStk[i] = 0;
     }
 };
-GState G;
 
+GState G;
+struct UserFunc {
+    char name[12];
+    char body[64];
+    char param;
+    bool active;
+};
+
+#define USERFN_MAX 16
+struct UserFuncBank {
+    UserFunc f[USERFN_MAX];
+    int n = 0;
+    int find(const char* nm) const {
+        for (int i = 0; i < n; i++)
+            if (f[i].active && !strcmp(f[i].name, nm)) return i;
+        return -1;
+    }
+
+    bool add(const char* nm, char prm, const char* bd) {
+        if (n >= USERFN_MAX) return false;
+        strncpy(f[n].name, nm, 11); f[n].name[11] = 0;
+        strncpy(f[n].body, bd, 63); f[n].body[63] = 0;
+        f[n].param = prm;
+        f[n].active = true;
+        n++;
+        return true;
+    }
+
+    bool remove(const char* nm) {
+        int i = find(nm);
+        if (i < 0) return false;
+        for (int k = i; k < n-1; k++) f[k] = f[k+1];
+        n--;
+        return true;
+    }
+
+    void clear() { n = 0; }
+};
+
+UserFuncBank gUserFns;
 inline double toRad(double x) {
     if (G.angle == DEG)  return x * M_PI / 180.0;
     if (G.angle == GRAD) return x * M_PI / 200.0;
     return x;
 }
+
 inline double fromRad(double x) {
     if (G.angle == DEG)  return x * 180.0 / M_PI;
     if (G.angle == GRAD) return x * 200.0 / M_PI;
@@ -479,9 +519,8 @@ inline void formatNum(double v, char* out, int n) {
     } break;
     }
 }
-inline String numStr(double v) { char b[40]; formatNum(v,b,40); return String(b); }
 
-inline void formatInt(long long v, char* out, int n, BaseMode b) {
+static inline void formatInt(long long v, char* out, int n, BaseMode b) {
     switch (b) {
     case BASE_HEX: snprintf(out, n, "0x%llX", (unsigned long long)v); break;
     case BASE_OCT: snprintf(out, n, "0o%llo", (unsigned long long)v); break;
@@ -512,6 +551,7 @@ inline bool tryDecimalToSpecial(double v, char* out, int n) {
             return true;
         }
     }
+
     double rp2 = (2*a) / M_PI;
     if (a < 1e6 && fabs(rp2 - round(rp2)) < 1e-9 && (long long)round(rp2)%2!=0) {
         long long k = (long long)round(rp2);
@@ -543,6 +583,17 @@ inline int textWidth(const char* s) {
     return strlen(s) * 6;
 }
 
+inline const char* statLbl(int i) {
+    static char buf[STAT_LISTS][4];
+    static bool _init = false;
+    if (!_init) {
+        for (int k = 0; k < STAT_LISTS; k++) snprintf(buf[k], 4, "L%d", k+1);
+        _init = true;
+    }
+    if (i < 0 || i >= STAT_LISTS) return "?";
+    return buf[i];
+}
+
 struct KSum {
     double s = 0.0, c = 0.0;
     inline void add(double x) {
@@ -556,19 +607,25 @@ struct KSum {
 
 class DisplayMgr;
 class ExprEval;
+class StatGraphs;
 extern DisplayMgr DM;
 extern ExprEval   gEv;
+extern StatGraphs gStatGraphs;
+void statGraphShow(int kind);
+void statGraphMenu();
 extern unsigned long gLastInputT;
-
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 2 / 20 ─ DisplayMgr                                             ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class DisplayMgr {
+    static unsigned long _holdT, _repT;
 public:
+    void resetKeyRepeat() { _holdT = _repT = millis(); }
     inline bool pollKeys() {
         M5Cardputer.update();
         static bool escCooldown = false;
+        static bool dimmed = false;
+        static uint8_t savedBr = 128;
         if (escCooldown) {
             if (!M5Cardputer.Keyboard.isKeyPressed('`')) {
                 escCooldown = false;
@@ -576,13 +633,38 @@ public:
             }
             return false;
         }
+        unsigned long now = millis();
         if (M5Cardputer.Keyboard.isChange()) {
             if (M5Cardputer.Keyboard.isKeyPressed('`')) {
                 escCooldown = true;
             }
-            gLastInputT = millis();
+            gLastInputT = now;
+            _holdT = _repT = now;
+            if (dimmed) {                       // 減光中の最初のキーは復帰のみに使う
+                M5Cardputer.Display.setBrightness(savedBr);
+                dimmed = false;
+                return false;
+            }
             return true;
         }
+        if (M5Cardputer.Keyboard.isPressed()) {
+            gLastInputT = now;
+            // fn+矢印 / DEL の押しっぱなしは自動リピート (400ms 後に 70ms 間隔)
+            auto st = M5Cardputer.Keyboard.keysState();
+            bool nav = st.del || (st.fn && (IS_UP || IS_DOWN || IS_LEFT || IS_RIGHT));
+            if (nav && now - _holdT > 400 && now - _repT > 70) { _repT = now; return true; }
+            return false;
+        }
+        unsigned long idle = now - gLastInputT;
+        if (!dimmed && idle > 60000UL) {        // 60秒無操作で減光
+            savedBr = M5Cardputer.Display.getBrightness();
+            if (savedBr < 32) savedBr = 128;
+            M5Cardputer.Display.setBrightness(12);
+            dimmed = true;
+        }
+#ifdef ARDUINO_M5STACK_CARDPUTER
+        if (G.autoOffMin > 0 && idle > (unsigned long)G.autoOffMin * 60000UL) M5Cardputer.Power.powerOff();   // 600秒無操作で電源OFF (モジュール内でも有効)
+#endif
         return false;
     }
 
@@ -630,7 +712,6 @@ public:
         d.fillRect(0, HDR_H, LCD_W, 2, C_ACC2);
         d.fillRect(0, LCD_H - FTR_H, LCD_W, FTR_H, C_HDR);
         d.fillRect(0, LCD_H - FTR_H - 1, LCD_W, 2, C_ACC2);
-
         d.setTextDatum(middle_center);
         d.setTextSize(2);
         d.setTextColor(C_HDRTX, C_BG);
@@ -701,10 +782,6 @@ public:
         }
     }
 
-    void clearBody() {
-        auto& d = M5Cardputer.Display;
-        d.fillRect(0, HDR_H, LCD_W, LCD_H - HDR_H - FTR_H, C_BG);
-    }
 
     // ── 通知: ソフトシャドウ + 左アクセントストライプ ──
     void notify(const char* msg, uint16_t color = C_ACC, int ms = 800) {
@@ -729,7 +806,12 @@ public:
         strncpy(clipMsg, msg, maxCh); clipMsg[maxCh] = 0;
         d.drawString(clipMsg, LCD_W/2 + 2, y + 12);
         d.setTextDatum(top_left);
-        delay(ms);
+        unsigned long nt0 = millis();
+        while (millis() - nt0 < (unsigned long)ms) {      // 任意キーでスキップ
+            M5Cardputer.update();
+            if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isKeyPressed('`')) { gLastInputT = millis(); resetKeyRepeat(); break; }
+            delay(10);
+        }
     }
 
     // ── 確認ダイアログ: Y/N を色分けチップで ──
@@ -788,7 +870,7 @@ public:
         }
     }
 
-    // ── 入力行: プロンプトをチップ化 + 2px カーソル ──
+    // ── 入力行: プロンプトをチップ化 + 2px カーソル + 行内編集 (fn+←→:移動, fn+↑↓:先頭/末尾, DEL:削除, fn+DEL:全消去) ──
     bool inputLine(const char* prompt, char* buf, int maxLen, int y = 0) {
         auto& d = M5Cardputer.Display;
         int yy = (y > 0) ? y : LCD_H/2 - 18;
@@ -808,30 +890,49 @@ public:
         // 入力エリア
         bool blink = false;
         unsigned long lastBlink = millis();
-        int cur = strlen(buf);
+        int len = strlen(buf), pos = len;
+        const int fieldX = 8;
+        const int fieldW = w - 12;
+        const int maxChars = fieldW / 6;
+        int start = 0;
         while (true) {
-            // 入力エリア再描画
-            const int fieldX = 8;
-            const int fieldW = w - 12;
-            const int maxChars = fieldW / 6;
-            int startCh = (cur > maxChars) ? (cur - maxChars) : 0;
-            const char* visible = buf + startCh;
+            if (pos < start) start = pos;
+            if (pos > start + maxChars - 1) start = pos - maxChars + 1;
+            if (start < 0) start = 0;
+            char win[64];
+            int wl = len - start;
+            if (wl > maxChars) wl = maxChars;
+            if (wl > 62) wl = 62;
+            if (wl < 0) wl = 0;
+            memcpy(win, buf + start, wl); win[wl] = 0;
             d.fillRect(6, yy + 14, w - 4, 16, C_PANEL);
             d.setTextColor(C_FG, C_PANEL);
-            d.drawString(visible, fieldX, yy + 17);
-            int cx = fieldX + textWidth(visible);
+            d.drawString(win, fieldX, yy + 17);
+            int cx = fieldX + (pos - start) * 6;
             if (cx > LCD_W - 6) cx = LCD_W - 6;
             if (blink) d.fillRect(cx, yy + 16, 2, 12, C_ACC);
             unsigned long t0 = millis();
             while (millis() - t0 < 80) {
                 if (pollKeys()) {
                     auto st = M5Cardputer.Keyboard.keysState();
-                    if (st.fn && IS_ESC) return false;
+                    if (IS_ESC) return false;
                     if (st.enter) return true;
-                    if (st.del && cur > 0) { buf[--cur] = 0; goto rd; }
-                    for (auto c : st.word) {
-                        if (cur < maxLen-1 && c >= ' ' && c < 127) {
-                            buf[cur++] = c; buf[cur] = 0;
+                    if (st.fn && IS_LEFT)  { if (pos > 0) pos--;   blink = true; goto rd; }
+                    if (st.fn && IS_RIGHT) { if (pos < len) pos++; blink = true; goto rd; }
+                    if (st.fn && IS_UP)    { pos = 0;   blink = true; goto rd; }
+                    if (st.fn && IS_DOWN)  { pos = len; blink = true; goto rd; }
+                    if (st.fn && st.del)   { buf[0] = 0; len = pos = 0; goto rd; }
+                    if (st.del) {
+                        if (pos > 0) { memmove(buf + pos - 1, buf + pos, len - pos + 1); pos--; len--; }
+                        goto rd;
+                    }
+                    if (!st.fn) {
+                        for (auto c : st.word) {
+                            if (len < maxLen - 1 && c >= ' ' && c < 127) {
+                                char cc = (c == '_') ? '-' : ((c == '-') ? '_' : c);
+                                memmove(buf + pos + 1, buf + pos, len - pos + 1);
+                                buf[pos++] = cc; len++;
+                            }
                         }
                     }
                     if (!st.word.empty()) goto rd;
@@ -843,71 +944,88 @@ public:
         }
     }
 
-    // ── メニュー: 選択行の強調 + 交互行 + 細セパレータ ──
-    int menu(const char* title, const char* items[], int n, int init = 0) {
+    // ── メニュー: 部分再描画 / 端で循環 / fn+←→ でページ送り / 1-9・a-z ショートカット / 選択位置の記憶 ──
+    static int& menuMemo(const char* title) {
+        static uint32_t keys[128];
+        static int vals[128];
+        static int cnt = 0;
+        uint32_t h = 5381;
+        for (const char* p = title; *p; p++) h = h * 33 + (uint8_t)*p;
+        for (int i = 0; i < cnt; i++) if (keys[i] == h) return vals[i];
+        int i = (cnt < 128) ? cnt++ : 127;
+        keys[i] = h; vals[i] = 0;
+        return vals[i];
+    }
+
+    int menu(const char* title, const char* items[], int n, int init = -1) {
         auto& d = M5Cardputer.Display;
-        int sel = init;
+        int& memo = menuMemo(title);
+        int sel = (init >= 0) ? init : memo;
         if (sel < 0) sel = 0;
-        if (sel >= n) sel = n-1;
+        if (sel >= n) sel = n - 1;
         const int rowH = 13;
-        int viewH = LCD_H - HDR_H - FTR_H;
-        int rows = viewH / rowH;
+        const int viewH = LCD_H - HDR_H - FTR_H;
+        const int rows = viewH / rowH;
         int top = 0;
+        if (sel >= rows) top = sel - rows + 1;
+        auto drawRow = [&](int idx) {
+            int i = idx - top;
+            if (i < 0 || i >= rows || idx >= n) return;
+            int y = HDR_H + i * rowH;
+            bool isSel = (idx == sel);
+            uint16_t bg = isSel ? C_SEL_BG : ((i & 1) ? C_BG : C_PANEL2);
+            d.fillRect(0, y, LCD_W, rowH, bg);
+            d.drawFastHLine(0, y + rowH - 1, LCD_W, C_LINE);
+            if (isSel) d.fillRect(0, y, 3, rowH, C_SEL_BAR);
+            char num[2] = { (char)(idx < 9 ? '1' + idx : (idx < 35 ? 'a' + (idx - 9) : '*')), 0 };
+            d.setTextColor(isSel ? C_SEL_BAR : C_ACC, bg);
+            d.drawString(num, 8, y + 3);
+            d.setTextColor(isSel ? C_HDRTX : C_FG, bg);
+            d.drawString(items[idx], 26, y + 3);
+        };
+        auto drawBar = [&]() {
+            if (n <= rows) return;
+            int sbx = LCD_W - 3;
+            d.fillRect(sbx, HDR_H, 3, viewH, C_PANEL2);
+            int thumb = (rows * viewH) / n;
+            if (thumb < 12) thumb = 12;
+            int ty = HDR_H + (top * (viewH - thumb)) / (n - rows);
+            d.fillRect(sbx, ty, 3, thumb, C_ACC);
+        };
+        auto drawAll = [&]() {
+            for (int i = 0; i < rows && top + i < n; i++) drawRow(top + i);
+            drawBar();
+        };
+        d.fillScreen(C_BG);
+        header(title);
+        footer("ENT:OK", n > 9 ? "1-9 a-z" : "1-9", "ESC:back");
+        drawAll();
         while (true) {
-            if (sel < top) top = sel;
-            if (sel >= top + rows) top = sel - rows + 1;
-            d.fillScreen(C_BG);
-            header(title);
-            footer("ENT:OK", "", "ESC:back");
-            for (int i = 0; i < rows; i++) {
-                int idx = top + i;
-                if (idx >= n) break;
-                int y = HDR_H + i * rowH;
-                bool isSel = (idx == sel);
-                // 交互背景
-                uint16_t bg = isSel ? C_SEL_BG : ((i & 1) ? C_BG : C_PANEL2);
-                d.fillRect(0, y, LCD_W, rowH, bg);
-                // 行セパレータ
-                d.drawFastHLine(0, y + rowH - 1, LCD_W, C_LINE);
-                // 左選択バー
-                if (isSel) d.fillRect(0, y, 3, rowH, C_SEL_BAR);
-                // 番号 (アクセント色)
-                char num[4]; snprintf(num, sizeof(num), "%d", idx+1);
-                uint16_t numCol = isSel ? C_SEL_BAR : C_ACC;
-                d.setTextColor(numCol, bg);
-                d.drawString(num, 8, y + 3);
-                // テキスト
-                uint16_t txtCol = isSel ? C_HDRTX : C_FG;
-                d.setTextColor(txtCol, bg);
-                d.drawString(items[idx], 26, y + 3);
-            }
-            // スクロールバー
-            if (n > rows) {
-                int sbx = LCD_W - 3;
-                d.fillRect(sbx, HDR_H, 3, viewH, C_PANEL2);
-                int thumb = (rows * viewH) / n;
-                if (thumb < 12) thumb = 12;
-                int ty = HDR_H + (top * (viewH - thumb)) / (n - rows);
-                d.fillRect(sbx, ty, 3, thumb, C_ACC);
-            }
-            while (true) {
-                if (!pollKeys()) { delay(15); continue; }
-                auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return -1;
-                if (st.enter) return sel;
-                if (st.fn && IS_UP)   { if (sel > 0)   { sel--; break; } }
-                if (st.fn && IS_DOWN) { if (sel < n-1) { sel++; break; } }
+            if (!pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return -1;
+            if (st.enter) { memo = (strcmp(items[sel], "Back") != 0) ? sel : 0; return sel; }
+            int ns = sel;
+            if (st.fn && IS_UP)         ns = (sel > 0) ? sel - 1 : n - 1;
+            else if (st.fn && IS_DOWN)  ns = (sel < n - 1) ? sel + 1 : 0;
+            else if (st.fn && IS_LEFT)  ns = (sel - rows > 0) ? sel - rows : 0;
+            else if (st.fn && IS_RIGHT) ns = (sel + rows < n - 1) ? sel + rows : n - 1;
+            else {
                 for (auto c : st.word) {
-                    if (c >= '1' && c <= '9') {
-                        int k = c - '1';
-                        if (k < n) return k;
-                    }
+                    int k = -1;
+                    if (c >= '1' && c <= '9') k = c - '1';
+                    else if (!st.fn && c >= 'a' && c <= 'z') k = 9 + (c - 'a');
+                    else if (!st.fn && c >= 'A' && c <= 'Z') k = 9 + (c - 'A');
+                    if (k >= 0 && k < n) { memo = (strcmp(items[k], "Back") != 0) ? k : 0; return k; }
                 }
-                if (!st.word.empty()) {
-                    bool found = false;
-                    for (auto c : st.word) if (c >= '1' && c <= '9') found = true;
-                    if (found) break;
-                }
+            }
+            if (ns != sel) {
+                int old = sel, ot = top;
+                sel = ns;
+                if (sel < top) top = sel;
+                if (sel >= top + rows) top = sel - rows + 1;
+                if (top != ot) drawAll();
+                else { drawRow(old); drawRow(sel); drawBar(); }
             }
         }
     }
@@ -923,7 +1041,7 @@ public:
             int sz = (len - p < maxCh) ? (len - p) : maxCh;
             if (sz < len - p) {
                 int sp = sz;
-                while (sp > maxCh/2 && line[sp] != ' ' && p+sp < len && text[p+sp] != ' ') sp--;
+                while (sp > maxCh/2 && p+sp < len && text[p+sp] != ' ') sp--;
                 if (sp > maxCh/2) sz = sp;
             }
             memcpy(line, text + p, sz); line[sz] = 0;
@@ -956,7 +1074,7 @@ public:
         hdr[26]=1; hdr[28]=24;
         hdr[34]=imgSize & 0xFF; hdr[35]=(imgSize>>8)&0xFF;
         hdr[36]=(imgSize>>16)&0xFF; hdr[37]=(imgSize>>24)&0xFF;
-        f.write(hdr, 54);
+        if (f.write(hdr, 54) != 54) { f.close(); return false; }
         uint8_t* row = (uint8_t*)malloc(rowSize);
         if (!row) { f.close(); return false; }
         for (int y = H-1; y >= 0; y--) {
@@ -970,7 +1088,7 @@ public:
                 row[x*3 + 1] = (g6 * 255) / 63;
                 row[x*3 + 2] = (r5 * 255) / 31;
             }
-            f.write(row, rowSize);
+            if (f.write(row, rowSize) != (size_t)rowSize) { free(row); f.close(); return false; }
         }
         free(row);
         f.close();
@@ -985,17 +1103,17 @@ public:
         return ok;
     }
 };
-DisplayMgr DM;
 
+unsigned long DisplayMgr::_holdT = 0;
+unsigned long DisplayMgr::_repT = 0;
+DisplayMgr DM;
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 3 / 20 ─ ExprEval                                               ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class ExprEval {
 public:
     struct Subst { char var; double val; };
     struct Result { double val; bool ok; const char* err; };
-
     Result eval(const char* expr, const Subst* subs = nullptr, int nSubs = 0) {
         _src = expr; _pos = 0; _err = nullptr; _subs = subs; _nSubs = nSubs;
         skipSpaces();
@@ -1005,27 +1123,20 @@ public:
         if (_src[_pos] != 0) return {0, false, "trailing chars"};
         return {v, true, nullptr};
     }
-
 private:
     const char* _src; int _pos;
     const char* _err;
     const Subst* _subs; int _nSubs;
-
     void skipSpaces() { while (_src[_pos] == ' ' || _src[_pos] == '\t') _pos++; }
-    bool match(const char* s) {
-        skipSpaces();
-        int n = strlen(s);
-        if (strncmp(_src + _pos, s, n) == 0) { _pos += n; return true; }
-        return false;
-    }
+
     bool matchCI(const char* s) {
         skipSpaces();
         int n = strlen(s);
         if (strncasecmp(_src + _pos, s, n) == 0) { _pos += n; return true; }
         return false;
     }
-    void setErr(const char* msg) { if (!_err) _err = msg; }
 
+    void setErr(const char* msg) { if (!_err) _err = msg; }
     double parseExpr() {
         double v = parseTerm();
         while (true) {
@@ -1033,10 +1144,20 @@ private:
             char c = _src[_pos];
             if (c == '+') { _pos++; v += parseTerm(); }
             else if (c == '-') { _pos++; v -= parseTerm(); }
+            else if (c == '?') {
+                _pos++;
+                double tv = parseExpr();
+                skipSpaces();
+                if (_src[_pos] == ':') _pos++;
+                else { setErr(": expected"); return 0; }
+                double fv = parseExpr();
+                return v != 0 ? tv : fv;
+            }
             else break;
         }
         return v;
     }
+
     double parseTerm() {
         double v = parseFactor();
         while (true) {
@@ -1053,6 +1174,7 @@ private:
         }
         return v;
     }
+
     double parseFactor() {
         double v = parseUnary();
         while (true) {
@@ -1064,6 +1186,7 @@ private:
         if (_src[_pos] == '^') { _pos++; double e = parseFactor(); v = pow(v, e); }
         return v;
     }
+
     double parseUnary() {
         skipSpaces();
         char c = _src[_pos];
@@ -1071,6 +1194,7 @@ private:
         if (c == '-') { _pos++; return -parseUnary(); }
         return parsePrimary();
     }
+
     double parsePrimary() {
         skipSpaces();
         char c = _src[_pos];
@@ -1115,6 +1239,33 @@ private:
         skipSpaces();
         if (_src[_pos] == '(') {
             _pos++;
+            skipSpaces();
+            if (_src[_pos] == '[') {
+                _pos++;
+                double arr[64]; int an = 0;
+                skipSpaces();
+                if (_src[_pos] != ']') {
+                    arr[an++] = parseExpr();
+                    while (_src[_pos] == ',' && an < 64) {
+                        _pos++; skipSpaces();
+                        arr[an++] = parseExpr();
+                    }
+                }
+                skipSpaces();
+                if (_src[_pos] == ']') _pos++;
+                else setErr("] expected");
+                skipSpaces();
+                if (_src[_pos] == ')') _pos++;
+                else setErr(") expected");
+                if (!strcasecmp(name,"sum")) { double s=0; for (int i=0;i<an;i++) s+=arr[i]; return s; }
+                if (!strcasecmp(name,"mean")||!strcasecmp(name,"avg")) { if (an<1) return 0; double s=0; for (int i=0;i<an;i++) s+=arr[i]; return s/an; }
+                if (!strcasecmp(name,"prod")) { double p=1; for (int i=0;i<an;i++) p*=arr[i]; return p; }
+                if (!strcasecmp(name,"count")) return (double)an;
+                if (!strcasecmp(name,"min")) { if (an<1) return 0; double m=arr[0]; for (int i=1;i<an;i++) if (arr[i]<m) m=arr[i]; return m; }
+                if (!strcasecmp(name,"max")) { if (an<1) return 0; double m=arr[0]; for (int i=1;i<an;i++) if (arr[i]>m) m=arr[i]; return m; }
+                setErr("array fn unsupported");
+                return 0;
+            }
             double a[8]; int na = 0;
             if (_src[_pos] != ')') {
                 a[na++] = parseExpr();
@@ -1125,6 +1276,19 @@ private:
             skipSpaces();
             if (_src[_pos] == ')') _pos++;
             else setErr(") expected");
+            int ufi = gUserFns.find(name);
+            if (ufi >= 0) {
+                if (na != 1) { setErr("user fn needs 1 arg"); return 0; }
+                static int depth = 0;
+                if (depth >= 32) { setErr("user fn recursion"); return 0; }
+                depth++;
+                ExprEval sub;
+                ExprEval::Subst us = { gUserFns.f[ufi].param, a[0] };
+                auto ur = sub.eval(gUserFns.f[ufi].body, &us, 1);
+                depth--;
+                if (!ur.ok) { setErr(ur.err ? ur.err : "user fn err"); return 0; }
+                return ur.val;
+            }
             return callFn(name, a, na);
         }
         if (!strcmp(name, "pi") || !strcmp(name, "PI") || !strcmp(name, "Pi")) return M_PI;
@@ -1150,6 +1314,12 @@ private:
     }
 
     double callFn(const char* nm, double* a, int na) {
+        if (na >= 1) {
+            if (!strcasecmp(nm,"sum")) { double s=0; for (int i=0;i<na;i++) s+=a[i]; return s; }
+            if (!strcasecmp(nm,"mean")||!strcasecmp(nm,"avg")) { double s=0; for (int i=0;i<na;i++) s+=a[i]; return s/na; }
+            if (!strcasecmp(nm,"prod")) { double p=1; for (int i=0;i<na;i++) p*=a[i]; return p; }
+            if (!strcasecmp(nm,"count")) return (double)na;
+        }
         if (na == 1) {
             if (!strcasecmp(nm,"sin"))   return sin(toRad(a[0]));
             if (!strcasecmp(nm,"cos"))   return cos(toRad(a[0]));
@@ -1209,7 +1379,7 @@ private:
         }
         if (na == 2) {
             if (!strcasecmp(nm,"pow"))   return pow(a[0], a[1]);
-            if (!strcasecmp(nm,"nrt"))   return pow(a[1], 1.0/a[0]);
+            if (!strcasecmp(nm,"nrt"))   { if (a[0] == 0) return NAN; return pow(a[1], 1.0/a[0]); }
             if (!strcasecmp(nm,"atan2")) return fromRad(atan2(a[0], a[1]));
             if (!strcasecmp(nm,"hypot")) return hypot(a[0], a[1]);
             if (!strcasecmp(nm,"min"))   return fmin(a[0], a[1]);
@@ -1247,17 +1417,20 @@ private:
         for (int i = 2; i <= (int)x; i++) r *= i;
         return r;
     }
+
     static long long gcdLL(long long a, long long b) {
         if (a < 0) a = -a; if (b < 0) b = -b;
         while (b) { long long t = a % b; a = b; b = t; }
         return a ? a : 1;
     }
+
     static double permD(long long n, long long r) {
         if (r < 0 || r > n) return 0;
         double v = 1;
         for (long long i = 0; i < r; i++) v *= (n - i);
         return v;
     }
+
     static double combD(long long n, long long r) {
         if (r < 0 || r > n) return 0;
         if (r > n - r) r = n - r;
@@ -1265,6 +1438,7 @@ private:
         for (long long i = 0; i < r; i++) v = v * (n - i) / (i + 1);
         return v;
     }
+
     static unsigned long long mulmod64(unsigned long long a, unsigned long long b, unsigned long long m) {
         unsigned long long result = 0;
         a %= m;
@@ -1275,6 +1449,7 @@ private:
         }
         return result;
     }
+
     static unsigned long long modpow64(unsigned long long b, unsigned long long e, unsigned long long m) {
         unsigned long long r = 1 % m; b %= m;
         while (e) {
@@ -1284,6 +1459,7 @@ private:
         }
         return r;
     }
+
     static bool isPrime(long long n) {
         if (n < 2) return false;
         for (long long p : {2,3,5,7,11,13,17,19,23,29,31,37}) {
@@ -1305,12 +1481,14 @@ private:
         }
         return true;
     }
+
     static long long nextPrime(long long n) {
         if (n < 2) return 2;
         long long p = n + 1;
         while (!isPrime(p)) p++;
         return p;
     }
+
     static long long prevPrime(long long n) {
         if (n <= 2) return 0;
         long long p = n - 1;
@@ -1318,14 +1496,12 @@ private:
         return (p > 1) ? p : 0;
     }
 };
-ExprEval gEv;
 
+ExprEval gEv;
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 4 / 20 ─ NumAnalysis / Mat / Dist                               ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 namespace NumAnalysis {
-
 inline double evalAt(const char* expr, char var, double x) {
     ExprEval::Subst s = {var, x};
     auto r = gEv.eval(expr, &s, 1);
@@ -1396,6 +1572,7 @@ inline double sumN(const char* expr, char var, double from, double to) {
     for (long long i = lo; i <= hi; i++) k.add(evalAt(expr, var, (double)i));
     return k.get();
 }
+
 inline double prodN(const char* expr, char var, double from, double to) {
     double p = 1;
     long long lo = (long long)from, hi = (long long)to;
@@ -1426,6 +1603,8 @@ inline bool bisect(const char* expr, char var, double a, double b,
     double fb = evalAt(expr, var, b);
     if (!isfinite(fa) || !isfinite(fb)) return false;
     if (fa * fb > 0) return false;
+    if (fabs(fa) < tol) { root = a; return true; }
+    if (fabs(fb) < tol) { root = b; return true; }
     for (int i = 0; i < maxIter; i++) {
         double m = (a + b) / 2;
         double fm = evalAt(expr, var, m);
@@ -1444,6 +1623,7 @@ inline int quadratic(double a, double b, double c, double r[2], double i[2]) {
         r[0] = -c / b; i[0] = 0;
         return 1;
     }
+
     double D = b*b - 4*a*c;
     if (D >= 0) {
         double s = sqrt(D);
@@ -1451,6 +1631,7 @@ inline int quadratic(double a, double b, double c, double r[2], double i[2]) {
         r[1] = (-b - s) / (2*a); i[1] = 0;
         return 2;
     }
+
     double s = sqrt(-D);
     r[0] = -b / (2*a); i[0] =  s / (2*a);
     r[1] = -b / (2*a); i[1] = -s / (2*a);
@@ -1464,6 +1645,7 @@ inline int cubic(double a, double b, double c, double d, double r[3], double im[
         for (int i = 0; i < k; i++) { r[i] = rr[i]; im[i] = ii[i]; }
         return k;
     }
+
     double A = b/a, B = c/a, C = d/a;
     double Q = (3*B - A*A) / 9.0;
     double R = (9*A*B - 27*C - 2*A*A*A) / 54.0;
@@ -1477,7 +1659,11 @@ inline int cubic(double a, double b, double c, double d, double r[3], double im[
         r[2]  = r[1];                      im[2] = -im[1];
         return 3;
     }
-    double th = acos(R / sqrt(-Q*Q*Q));
+
+    double argAcos = R / sqrt(-Q*Q*Q);
+    if (argAcos > 1.0) argAcos = 1.0;
+    if (argAcos < -1.0) argAcos = -1.0;
+    double th = acos(argAcos);
     double mq = 2 * sqrt(-Q);
     r[0] = mq * cos( th       /3) - A/3; im[0] = 0;
     r[1] = mq * cos((th+2*M_PI)/3) - A/3; im[1] = 0;
@@ -1500,9 +1686,11 @@ inline int quartic(double a, double b, double c, double d, double e,
         for (int i = 0; i < k; i++) if (fabs(ic[i]) < 1e-6) { y = rc[i]; break; }
     }
     if (!isfinite(y)) return 0;
+    if (y < 0) y = 0;
     double sq = sqrt(y);
-    double A1 =  sq, B1 = -(2*p + y - q/sq) / 2;
-    double A2 = -sq, B2 = -(2*p + y + q/sq) / 2;
+    if (sq < 1e-9) { for (int i = 0; i < 4; i++) { r[i] = NAN; im[i] = NAN; } return 4; }
+    double A1 =  sq, B1 = (p + y - q/sq) / 2;
+    double A2 = -sq, B2 = (p + y + q/sq) / 2;
     double r1[2], i1[2], r2[2], i2[2];
     quadratic(1, A1, B1, r1, i1);
     quadratic(1, A2, B2, r2, i2);
@@ -1542,11 +1730,8 @@ inline int polyRoots(const double* coef, int deg, Complex* roots) {
     for (int i = 0; i < deg; i++) roots[i] = z[i];
     return deg;
 }
-
 } // namespace NumAnalysis
-
 namespace Mat {
-
 inline void mul(const double* a, int r, int c, const double* b, int k, double* out) {
     for (int i = 0; i < r; i++)
         for (int j = 0; j < k; j++) {
@@ -1555,10 +1740,12 @@ inline void mul(const double* a, int r, int c, const double* b, int k, double* o
             out[i*k+j] = s;
         }
 }
+
 inline void transpose(const double* a, int r, int c, double* out) {
     for (int i = 0; i < r; i++)
         for (int j = 0; j < c; j++) out[j*r+i] = a[i*c+j];
 }
+
 inline bool gaussSolve(double* A, int n, double* b) {
     for (int i = 0; i < n; i++) {
         int pi = i; double pv = fabs(A[i*n+i]);
@@ -1579,6 +1766,7 @@ inline bool gaussSolve(double* A, int n, double* b) {
     }
     return true;
 }
+
 inline double det(const double* in, int n) {
     double* A = (double*)malloc(n*n*sizeof(double));
     if (!A) return 0;
@@ -1597,11 +1785,13 @@ inline double det(const double* in, int n) {
             for (int j = i; j < n; j++) A[k*n+j] -= f * A[i*n+j];
         }
     }
+
     double d = s;
     for (int i = 0; i < n; i++) d *= A[i*n+i];
     free(A);
     return d;
 }
+
 inline bool inv(const double* in, int n, double* out) {
     double* A = (double*)malloc(n*n*sizeof(double));
     if (!A) return false;
@@ -1630,6 +1820,7 @@ inline bool inv(const double* in, int n, double* out) {
     free(A);
     return true;
 }
+
 inline int rank(const double* in, int r, int c) {
     double* A = (double*)malloc(r*c*sizeof(double));
     if (!A) return 0;
@@ -1649,6 +1840,7 @@ inline int rank(const double* in, int r, int c) {
     free(A);
     return rk;
 }
+
 inline bool jacobiEig(double* A, int n, double* eig, double* V = nullptr) {
     if (V) for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) V[i*n+j] = (i==j)?1.0:0.0;
     for (int it = 0; it < 100; it++) {
@@ -1687,6 +1879,7 @@ inline bool jacobiEig(double* A, int n, double* eig, double* V = nullptr) {
             }
     return true;
 }
+
 inline bool qrEig(const double* in, int n, double* eigRe, double* eigIm) {
     double* A = (double*)malloc(n*n*sizeof(double));
     if (!A) return false;
@@ -1721,6 +1914,7 @@ inline bool qrEig(const double* in, int n, double* eigRe, double* eigIm) {
         memcpy(A, T, n*n*sizeof(double));
         free(T); free(Q);
     }
+
     int i = 0;
     while (i < n) {
         if (i < n-1 && fabs(A[(i+1)*n+i]) > 1e-9) {
@@ -1743,19 +1937,150 @@ inline bool qrEig(const double* in, int n, double* eigRe, double* eigIm) {
     free(A);
     return true;
 }
-inline bool luSolve(double* A, int n, double* b) { return gaussSolve(A, n, b); }
 
+inline double trace(const double* a, int n) {
+    double t = 0; for (int i = 0; i < n; i++) t += a[i*n+i]; return t;
+}
+
+// A^p (整数 p。負は逆行列経由)。out は n*n。
+inline bool matPow(const double* a, int n, int p, double* out) {
+    double base[MAT_MAX*MAT_MAX], tmp[MAT_MAX*MAT_MAX];
+    if (p < 0) { if (!inv(a, n, base)) return false; p = -p; }
+    else memcpy(base, a, n*n*sizeof(double));
+    for (int i = 0; i < n*n; i++) out[i] = 0;
+    for (int i = 0; i < n; i++) out[i*n+i] = 1;
+    while (p > 0) {
+        if (p & 1) { mul(out, n, n, base, n, tmp); memcpy(out, tmp, n*n*sizeof(double)); }
+        p >>= 1;
+        if (p) { mul(base, n, n, base, n, tmp); memcpy(base, tmp, n*n*sizeof(double)); }
+    }
+    return true;
+}
+
+// PA = LU (部分ピボット)。perm[i] = 元の行番号。
+inline bool luDecomp(const double* a, int n, double* L, double* U, int* perm) {
+    double W[MAT_MAX*MAT_MAX];
+    memcpy(W, a, n*n*sizeof(double));
+    for (int i = 0; i < n; i++) perm[i] = i;
+    for (int i = 0; i < n*n; i++) { L[i] = 0; U[i] = 0; }
+    for (int k = 0; k < n; k++) {
+        int pi = k; double pv = fabs(W[k*n+k]);
+        for (int r = k+1; r < n; r++) if (fabs(W[r*n+k]) > pv) { pv = fabs(W[r*n+k]); pi = r; }
+        if (pv < 1e-15) return false;
+        if (pi != k) {
+            for (int j = 0; j < n; j++) { double t = W[k*n+j]; W[k*n+j] = W[pi*n+j]; W[pi*n+j] = t; }
+            int t = perm[k]; perm[k] = perm[pi]; perm[pi] = t;
+        }
+        for (int r = k+1; r < n; r++) {
+            W[r*n+k] /= W[k*n+k];
+            for (int j = k+1; j < n; j++) W[r*n+j] -= W[r*n+k] * W[k*n+j];
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            if (j < i) L[i*n+j] = W[i*n+j];
+            else       U[i*n+j] = W[i*n+j];
+        }
+        L[i*n+i] = 1;
+    }
+    return true;
+}
+
+// A = QR (修正グラム・シュミット、正方・列フルランク)
+inline bool qrDecomp(const double* a, int n, double* Q, double* R) {
+    for (int i = 0; i < n*n; i++) { Q[i] = a[i]; R[i] = 0; }
+    for (int j = 0; j < n; j++) {
+        for (int k = 0; k < j; k++) {
+            double d = 0;
+            for (int i = 0; i < n; i++) d += Q[i*n+k] * Q[i*n+j];
+            R[k*n+j] = d;
+            for (int i = 0; i < n; i++) Q[i*n+j] -= d * Q[i*n+k];
+        }
+        double nm = 0;
+        for (int i = 0; i < n; i++) nm += Q[i*n+j] * Q[i*n+j];
+        nm = sqrt(nm);
+        if (nm < 1e-12) return false;
+        R[j*n+j] = nm;
+        for (int i = 0; i < n; i++) Q[i*n+j] /= nm;
+    }
+    return true;
+}
+
+// 特性多項式 (Faddeev-LeVerrier)。c[k] = λ^k の係数、c[n] = 1。c は n+1 要素。
+inline void charPoly(const double* a, int n, double* c) {
+    double M[MAT_MAX*MAT_MAX], AM[MAT_MAX*MAT_MAX];
+    for (int i = 0; i < n*n; i++) M[i] = 0;
+    c[n] = 1;
+    for (int k = 1; k <= n; k++) {
+        mul(a, n, n, M, n, AM);
+        for (int i = 0; i < n; i++) AM[i*n+i] += c[n-k+1];
+        memcpy(M, AM, n*n*sizeof(double));
+        mul(a, n, n, M, n, AM);
+        c[n-k] = -trace(AM, n) / k;
+    }
+}
+
+// 実固有値 lam に対する固有ベクトル (逆反復法、正規化済み)
+inline bool eigVec(const double* a, int n, double lam, double* v) {
+    double B[MAT_MAX*MAT_MAX], x[MAT_MAX];
+    double shift = lam + 1e-7 * (1.0 + fabs(lam));
+    for (int i = 0; i < n; i++) x[i] = 1.0 / sqrt((double)n) + 0.01 * i;
+    for (int it = 0; it < 8; it++) {
+        memcpy(B, a, n*n*sizeof(double));
+        for (int i = 0; i < n; i++) B[i*n+i] -= shift;
+        if (!gaussSolve(B, n, x)) return false;
+        double nm = 0;
+        for (int i = 0; i < n; i++) nm += x[i]*x[i];
+        nm = sqrt(nm);
+        if (!(nm > 1e-300 && nm < 1e300)) return false;
+        for (int i = 0; i < n; i++) x[i] /= nm;
+    }
+    for (int i = 0; i < n; i++) v[i] = x[i];
+    return true;
+}
+
+// 複素固有値 lamR+lamI*i に対する固有ベクトル (実2n系逆反復)。vR/vI は正規化済み。
+inline bool eigVecC(const double* a, int n, double lamR, double lamI, double* vR, double* vI) {
+    int N = 2*n;
+    double* M = (double*)malloc(N*N*sizeof(double));
+    double rhs[2*MAT_MAX];
+    if (!M) return false;
+    double shift = 1e-7 * (1.0 + fabs(lamR));
+    for (int i = 0; i < n; i++) { vR[i] = 1.0/sqrt((double)n) + 0.01*i; vI[i] = 0.01*i; }
+    for (int it = 0; it < 8; it++) {
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                double ad = a[i*n+j] - (i==j ? (lamR + shift) : 0.0);
+                M[i*N+j]       = ad;
+                M[i*N+n+j]     = (i==j ? lamI : 0.0);
+                M[(n+i)*N+j]   = (i==j ? -lamI : 0.0);
+                M[(n+i)*N+n+j] = ad;
+            }
+            rhs[i] = vR[i];
+            rhs[n+i] = vI[i];
+        }
+        if (!gaussSolve(M, N, rhs)) { free(M); return false; }
+        double nm = 0;
+        for (int i = 0; i < N; i++) nm += rhs[i]*rhs[i];
+        nm = sqrt(nm);
+        if (!(nm > 1e-300 && nm < 1e300)) { free(M); return false; }
+        for (int i = 0; i < N; i++) rhs[i] /= nm;
+        for (int i = 0; i < n; i++) { vR[i] = rhs[i]; vI[i] = rhs[n+i]; }
+    }
+    free(M);
+    return true;
+}
 } // namespace Mat
-
 namespace Dist {
-
 inline double normalCDF(double x) {
     return 0.5 * (1.0 + erf(x / sqrt(2.0)));
 }
+
 inline double normalPDF(double x, double mu = 0, double sd = 1) {
     double z = (x - mu) / sd;
     return exp(-0.5*z*z) / (sd * sqrt(2*M_PI));
 }
+
 inline double normalInv(double p) {
     if (p <= 0 || p >= 1) return p <= 0 ? -INFINITY : INFINITY;
     static const double a[] = {-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
@@ -1777,6 +2102,7 @@ inline double normalInv(double p) {
         return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
                (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
     }
+
     double q = sqrt(-2*log(1-p));
     return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
             ((((dd[0]*q+dd[1])*q+dd[2])*q+dd[3])*q+1);
@@ -1793,6 +2119,7 @@ inline double gammaP(double a, double x) {
         }
         return s * exp(-x + a*log(x) - lgamma(a));
     }
+
     double b = x + 1 - a, c = 1e30, d = 1.0/b, h = d;
     for (int i = 1; i < 200; i++) {
         double an = -i*(i - a);
@@ -1806,14 +2133,17 @@ inline double gammaP(double a, double x) {
     }
     return 1.0 - h * exp(-x + a*log(x) - lgamma(a));
 }
+
 inline double chiSquareCDF(double x, double df) {
     if (x <= 0) return 0;
     return gammaP(df/2.0, x/2.0);
 }
+
 inline double chiSquarePDF(double x, double df) {
     if (x <= 0) return 0;
     return pow(x, df/2-1) * exp(-x/2) / (pow(2, df/2) * tgamma(df/2));
 }
+
 inline double chiSquareInv(double p, double df) {
     if (p <= 0) return 0;
     if (p >= 1) return INFINITY;
@@ -1846,6 +2176,7 @@ inline double betaCF(double a, double b, double x) {
     }
     return h;
 }
+
 inline double betaInc(double a, double b, double x) {
     if (x <= 0) return 0;
     if (x >= 1) return 1;
@@ -1853,36 +2184,42 @@ inline double betaInc(double a, double b, double x) {
     if (x < (a+1)/(a+b+2)) return bt * betaCF(a, b, x) / a;
     return 1 - bt * betaCF(b, a, 1-x) / b;
 }
+
 inline double tCDF(double t, double df) {
     double x = df / (df + t*t);
     double p = 0.5 * betaInc(df/2.0, 0.5, x);
     return (t > 0) ? 1 - p : p;
 }
+
 inline double tPDF(double t, double df) {
     return exp(lgamma((df+1)/2) - lgamma(df/2)) / sqrt(df*M_PI) *
            pow(1 + t*t/df, -(df+1)/2);
 }
+
 inline double tInv(double p, double df) {
     if (p <= 0) return -INFINITY;
     if (p >= 1) return  INFINITY;
-    double lo = -100, hi = 100;
-    for (int i = 0; i < 100; i++) {
+    double lo = -1e9, hi = 1e9;
+    for (int i = 0; i < 200; i++) {
         double m = (lo + hi)/2;
         if (tCDF(m, df) < p) lo = m; else hi = m;
         if (hi - lo < 1e-9) break;
     }
     return (lo + hi)/2;
 }
+
 inline double FCDF(double x, double d1, double d2) {
     if (x <= 0) return 0;
     return 1 - betaInc(d2/2, d1/2, d2/(d2 + d1*x));
 }
+
 inline double FPDF(double x, double d1, double d2) {
     if (x <= 0) return 0;
     return exp(lgamma((d1+d2)/2) - lgamma(d1/2) - lgamma(d2/2) +
                (d1/2)*log((double)d1/d2) + (d1/2-1)*log(x) -
                ((d1+d2)/2)*log(1 + (double)d1*x/d2));
 }
+
 inline double FInv(double p, double d1, double d2) {
     if (p <= 0) return 0;
     if (p >= 1) return INFINITY;
@@ -1895,15 +2232,18 @@ inline double FInv(double p, double d1, double d2) {
     }
     return (lo + hi)/2;
 }
+
 inline double binomPMF(int k, int n, double p) {
     if (k < 0 || k > n) return 0;
     return exp(lgamma(n+1) - lgamma(k+1) - lgamma(n-k+1) + k*log(p) + (n-k)*log(1-p));
 }
+
 inline double binomCDF(int k, int n, double p) {
     double s = 0;
     for (int i = 0; i <= k; i++) s += binomPMF(i, n, p);
     return s;
 }
+
 inline int binomInv(double q, int n, double p) {
     double s = 0;
     for (int k = 0; k <= n; k++) {
@@ -1912,15 +2252,18 @@ inline int binomInv(double q, int n, double p) {
     }
     return n;
 }
+
 inline double poisPMF(int k, double lam) {
     if (k < 0) return 0;
     return exp(-lam + k*log(lam) - lgamma(k+1));
 }
+
 inline double poisCDF(int k, double lam) {
     double s = 0;
     for (int i = 0; i <= k; i++) s += poisPMF(i, lam);
     return s;
 }
+
 inline int poisInv(double q, double lam) {
     double s = 0;
     for (int k = 0; k < 1000; k++) {
@@ -1929,14 +2272,17 @@ inline int poisInv(double q, double lam) {
     }
     return 1000;
 }
+
 inline double geomPMF(int k, double p) {
     if (k < 1) return 0;
     return p * pow(1 - p, k - 1);
 }
+
 inline double geomCDF(int k, double p) {
     if (k < 1) return 0;
     return 1 - pow(1 - p, k);
 }
+
 inline int geomInv(double q, double p) {
     if (q <= 0) return 1;
     if (q >= 1) return 1000;
@@ -1944,13 +2290,10 @@ inline int geomInv(double q, double p) {
     if (p <= 0) return 1000;
     return (int)ceil(log(1 - q) / log(1 - p));
 }
-
 } // namespace Dist                          // ← この1行を追加
-
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 5 / 20 ─ 科学定数データベース (386項目 実装済)                  ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 struct Constant {
     const char* name;
     const char* sym;
@@ -1999,7 +2342,6 @@ static const Constant constDB[] PROGMEM = {
     {"Conductance quantum",              "G0",      7.748091729e-5,         "S",            "Physical"},
     {"Josephson constant",               "K_J",     483597.8484e9,          "Hz/V",         "Physical"},
     {"von Klitzing constant",            "R_K",     25812.80745,            "ohm",          "Physical"},
-
     // ── 数学定数 (8) ──
     {"Pi",                               "pi",      3.14159265358979323846, "",             "Math"},
     {"Euler's number",                   "e",       2.71828182845904523536, "",             "Math"},
@@ -2009,7 +2351,27 @@ static const Constant constDB[] PROGMEM = {
     {"Square root of 3",                 "sqrt3",   1.73205080756887729352, "",             "Math"},
     {"Natural log of 2",                 "ln2",     0.69314718055994530941, "",             "Math"},
     {"Natural log of 10",                "ln10",    2.30258509299404568401, "",             "Math"},
-
+    // ── 数学定数（追加20項目） ──
+    {"Apéry constant zeta(3)",            "zeta3",   1.20205690315959428540, "",             "Math"},
+    {"Catalan constant",                  "G",       0.91596559417721901505, "",             "Math"},
+    {"Glaisher-Kinkelin constant",        "A",       1.28242712910062263688, "",             "Math"},
+    {"Khinchin constant",                 "K0",      2.68545200106530644530, "",             "Math"},
+    {"Twin prime constant",               "C2",      0.66016181584686957393, "",             "Math"},
+    {"Meissel-Mertens constant",          "M",       0.26149721284764278375, "",             "Math"},
+    {"Brun constant (twin primes)",       "B2",      1.902160583104,         "",             "Math"},
+    {"Feigenbaum delta",                  "delta",   4.66920160910299067185, "",             "Math"},
+    {"Feigenbaum alpha",                  "alphaF",  2.50290787509589282228, "",             "Math"},
+    {"Conway constant",                   "lambda",  1.30357726903429639125, "",             "Math"},
+    {"Lemniscate constant",               "varpi",   2.62205755429211981046, "",             "Math"},
+    {"Silver ratio",                      "deltaS",  2.41421356237309504880, "",             "Math"},
+    {"Plastic number",                    "rho",     1.32471795724474602596, "",             "Math"},
+    {"Tribonacci constant",               "T",       1.83928675521416113255, "",             "Math"},
+    {"Supergolden ratio",                 "psi",     1.46557123187676802665, "",             "Math"},
+    {"Somos quadratic recurrence",        "sigma",   1.66168794963359412129, "",             "Math"},
+    {"Mills constant",                    "A_M",     1.30637788386308069046, "",             "Math"},
+    {"MRB constant",                      "MRB",     0.18785964246206712024, "",             "Math"},
+    {"Omega constant (W(1))",             "Omega",   0.56714329040978387299, "",             "Math"},
+    {"Dottie number",                     "D",       0.73908513321516064165, "",             "Math"},
     // ── 電気電子材料 (40項目) ──
     {"Coulomb constant",                 "k_e",     8.987551787e9,          "N m2/C2",      "EE"},
     {"Electron mobility in Si (300K)",   "mu_e Si", 1417.0,                 "cm2/V/s",      "EE"},
@@ -2051,7 +2413,6 @@ static const Constant constDB[] PROGMEM = {
     {"Hard rubber resistivity (high)",   "rho rb2", 1e16,                   "ohm m",        "EE"},
     {"Glass resistivity (low)",          "rho gl1", 1e9,                    "ohm m",        "EE"},
     {"Glass resistivity (high)",         "rho gl2", 1e13,                   "ohm m",        "EE"},
-
     // ── 天文定数 (12) ──
     {"Astronomical unit",                "AU",      149597870700.0,         "m",            "Astronomy"},
     {"Light-year",                       "ly",      9.4607304725808e15,     "m",            "Astronomy"},
@@ -2065,7 +2426,6 @@ static const Constant constDB[] PROGMEM = {
     {"Earth polar radius",               "R_pol",   6356752.0,              "m",            "Astronomy"},
     {"Earth mass",                       "M_E",     5.9722e24,              "kg",           "Astronomy"},
     {"Moon orbital semi-major axis",     "a_moon",  384400.0,               "km",           "Astronomy"},
-
     // ── 太陽系8惑星 (64項目) ──
     {"Mercury mass","M Hg",0.330e24,"kg","Planet"},
     {"Mercury radius","R Hg",2440.0,"km","Planet"},
@@ -2131,7 +2491,6 @@ static const Constant constDB[] PROGMEM = {
     {"Neptune rotation period","T_r Ne",16.1,"h","Planet"},
     {"Neptune semi-major axis","a Ne",4495.1,"Gm","Planet"},
     {"Neptune orbital period","T Ne",59800.0,"d","Planet"},
-
     // ── 準惑星・主要衛星 (32項目) ──
     {"Pluto mass","M Pl",0.0146e24,"kg","DwarfMoon"},
     {"Pluto radius","R Pl",1188.0,"km","DwarfMoon"},
@@ -2165,7 +2524,6 @@ static const Constant constDB[] PROGMEM = {
     {"Moon rotation period (synch)","T_r Mo",655.7,"h","DwarfMoon"},
     {"Moon semi-major axis","a Mo",0.384,"Gm","DwarfMoon"},
     {"Moon orbital period","T Mo",27.3,"d","DwarfMoon"},
-
     // ── 地球物理 (23項目) ──
     {"Earth mean radius","R_m E",6371.01,"km","Geo"},
     {"Earth mean density","rho_m E",5.51,"g/cm3","Geo"},
@@ -2190,7 +2548,6 @@ static const Constant constDB[] PROGMEM = {
     {"Earth volume","V_E",1.0832e21,"m3","Geo"},
     {"Earth core radius","R_core",3485.0,"km","Geo"},
     {"Earth axial tilt","ax",23.4392811,"deg","Geo"},
-
     // ── 大気科学 (11項目) ──
     {"Sea level pressure","P0",101325.0,"Pa","Atmos"},
     {"Sea level temperature","T0",288.15,"K","Atmos"},
@@ -2203,13 +2560,11 @@ static const Constant constDB[] PROGMEM = {
     {"Specific heat of water vapor (cp)","cp_v",1865.0,"J/kg/K","Atmos"},
     {"Latent heat of vaporization (0C)","L_v",2.5e6,"J/kg","Atmos"},
     {"Karman constant","kappa",0.40,"","Atmos"},
-
     // ── 海洋物理 (4項目) ──
     {"Mean seawater density","rho_sw",1025.0,"kg/m3","Ocean"},
     {"Specific heat of seawater","cp_sw",3993.0,"J/kg/K","Ocean"},
     {"Standard seawater salinity","S_sw",35.0,"PSU","Ocean"},
     {"Speed of sound in seawater","v_sw",1522.0,"m/s","Ocean"},
-
     // ── 化学元素 (118+6=124項目) ──
     {"Hydrogen atomic weight","H",1.008,"g/mol","Element"},
     {"Helium atomic weight","He",4.0026,"g/mol","Element"},
@@ -2335,7 +2690,6 @@ static const Constant constDB[] PROGMEM = {
     {"Water specific heat (20C)","cp H2O",4.1813,"J/g/K","Element"},
     {"Water heat of vaporization","Lv H2O",2257.0,"J/g","Element"},
     {"Ice heat of fusion","Lf H2O",334.0,"J/g","Element"},
-
     // ── 生物学定数 (30項目) ──
     {"Alanine molar mass","Ala",89.09,"g/mol","Biology"},
     {"Arginine molar mass","Arg",174.20,"g/mol","Biology"},
@@ -2368,8 +2722,8 @@ static const Constant constDB[] PROGMEM = {
     {"Human ovum diameter","d_ova",1e-4,"m","Biology"},
     {"Bacterial gen. time (E.coli)","T_gen",1200.0,"s","Biology"},
 };
-static const int constN = sizeof(constDB) / sizeof(Constant);
 
+static const int constN = sizeof(constDB) / sizeof(Constant);
 static const char* PERIODIC[118] = {
     "H","He","Li","Be","B","C","N","O","F","Ne",
     "Na","Mg","Al","Si","P","S","Cl","Ar","K","Ca",
@@ -2384,6 +2738,7 @@ static const char* PERIODIC[118] = {
     "Md","No","Lr","Rf","Db","Sg","Bh","Hs","Mt","Ds",
     "Rg","Cn","Nh","Fl","Mc","Lv","Ts","Og"
 };
+
 static const double ATOMIC_W[118] = {
     1.008,4.0026,6.94,9.0122,10.81,12.011,14.007,15.999,18.998,20.180,
     22.990,24.305,26.982,28.085,30.974,32.06,35.45,39.948,39.098,40.078,
@@ -2399,16 +2754,143 @@ static const double ATOMIC_W[118] = {
     280.0,285.0,286.0,289.0,290.0,293.0,294.0,294.0
 };
 
+struct ElementInfo {
+    const char* nameEn;
+    const char* config;
+    uint8_t     group;
+    uint8_t     period;
+};
+
+static const ElementInfo ELEM_INFO[118] PROGMEM = {
+    {"Hydrogen","1s1",1,1},
+    {"Helium","1s2",18,1},
+    {"Lithium","[He]2s1",1,2},
+    {"Beryllium","[He]2s2",2,2},
+    {"Boron","[He]2s2 2p1",13,2},
+    {"Carbon","[He]2s2 2p2",14,2},
+    {"Nitrogen","[He]2s2 2p3",15,2},
+    {"Oxygen","[He]2s2 2p4",16,2},
+    {"Fluorine","[He]2s2 2p5",17,2},
+    {"Neon","[He]2s2 2p6",18,2},
+    {"Sodium","[Ne]3s1",1,3},
+    {"Magnesium","[Ne]3s2",2,3},
+    {"Aluminum","[Ne]3s2 3p1",13,3},
+    {"Silicon","[Ne]3s2 3p2",14,3},
+    {"Phosphorus","[Ne]3s2 3p3",15,3},
+    {"Sulfur","[Ne]3s2 3p4",16,3},
+    {"Chlorine","[Ne]3s2 3p5",17,3},
+    {"Argon","[Ne]3s2 3p6",18,3},
+    {"Potassium","[Ar]4s1",1,4},
+    {"Calcium","[Ar]4s2",2,4},
+    {"Scandium","[Ar]3d1 4s2",3,4},
+    {"Titanium","[Ar]3d2 4s2",4,4},
+    {"Vanadium","[Ar]3d3 4s2",5,4},
+    {"Chromium","[Ar]3d5 4s1",6,4},
+    {"Manganese","[Ar]3d5 4s2",7,4},
+    {"Iron","[Ar]3d6 4s2",8,4},
+    {"Cobalt","[Ar]3d7 4s2",9,4},
+    {"Nickel","[Ar]3d8 4s2",10,4},
+    {"Copper","[Ar]3d10 4s1",11,4},
+    {"Zinc","[Ar]3d10 4s2",12,4},
+    {"Gallium","[Ar]3d10 4s2 4p1",13,4},
+    {"Germanium","[Ar]3d10 4s2 4p2",14,4},
+    {"Arsenic","[Ar]3d10 4s2 4p3",15,4},
+    {"Selenium","[Ar]3d10 4s2 4p4",16,4},
+    {"Bromine","[Ar]3d10 4s2 4p5",17,4},
+    {"Krypton","[Ar]3d10 4s2 4p6",18,4},
+    {"Rubidium","[Kr]5s1",1,5},
+    {"Strontium","[Kr]5s2",2,5},
+    {"Yttrium","[Kr]4d1 5s2",3,5},
+    {"Zirconium","[Kr]4d2 5s2",4,5},
+    {"Niobium","[Kr]4d4 5s1",5,5},
+    {"Molybdenum","[Kr]4d5 5s1",6,5},
+    {"Technetium","[Kr]4d5 5s2",7,5},
+    {"Ruthenium","[Kr]4d7 5s1",8,5},
+    {"Rhodium","[Kr]4d8 5s1",9,5},
+    {"Palladium","[Kr]4d10",10,5},
+    {"Silver","[Kr]4d10 5s1",11,5},
+    {"Cadmium","[Kr]4d10 5s2",12,5},
+    {"Indium","[Kr]4d10 5s2 5p1",13,5},
+    {"Tin","[Kr]4d10 5s2 5p2",14,5},
+    {"Antimony","[Kr]4d10 5s2 5p3",15,5},
+    {"Tellurium","[Kr]4d10 5s2 5p4",16,5},
+    {"Iodine","[Kr]4d10 5s2 5p5",17,5},
+    {"Xenon","[Kr]4d10 5s2 5p6",18,5},
+    {"Cesium","[Xe]6s1",1,6},
+    {"Barium","[Xe]6s2",2,6},
+    {"Lanthanum","[Xe]5d1 6s2",3,6},
+    {"Cerium","[Xe]4f1 5d1 6s2",3,6},
+    {"Praseodymium","[Xe]4f3 6s2",3,6},
+    {"Neodymium","[Xe]4f4 6s2",3,6},
+    {"Promethium","[Xe]4f5 6s2",3,6},
+    {"Samarium","[Xe]4f6 6s2",3,6},
+    {"Europium","[Xe]4f7 6s2",3,6},
+    {"Gadolinium","[Xe]4f7 5d1 6s2",3,6},
+    {"Terbium","[Xe]4f9 6s2",3,6},
+    {"Dysprosium","[Xe]4f10 6s2",3,6},
+    {"Holmium","[Xe]4f11 6s2",3,6},
+    {"Erbium","[Xe]4f12 6s2",3,6},
+    {"Thulium","[Xe]4f13 6s2",3,6},
+    {"Ytterbium","[Xe]4f14 6s2",3,6},
+    {"Lutetium","[Xe]4f14 5d1 6s2",3,6},
+    {"Hafnium","[Xe]4f14 5d2 6s2",4,6},
+    {"Tantalum","[Xe]4f14 5d3 6s2",5,6},
+    {"Tungsten","[Xe]4f14 5d4 6s2",6,6},
+    {"Rhenium","[Xe]4f14 5d5 6s2",7,6},
+    {"Osmium","[Xe]4f14 5d6 6s2",8,6},
+    {"Iridium","[Xe]4f14 5d7 6s2",9,6},
+    {"Platinum","[Xe]4f14 5d9 6s1",10,6},
+    {"Gold","[Xe]4f14 5d10 6s1",11,6},
+    {"Mercury","[Xe]4f14 5d10 6s2",12,6},
+    {"Thallium","[Xe]4f14 5d10 6s2 6p1",13,6},
+    {"Lead","[Xe]4f14 5d10 6s2 6p2",14,6},
+    {"Bismuth","[Xe]4f14 5d10 6s2 6p3",15,6},
+    {"Polonium","[Xe]4f14 5d10 6s2 6p4",16,6},
+    {"Astatine","[Xe]4f14 5d10 6s2 6p5",17,6},
+    {"Radon","[Xe]4f14 5d10 6s2 6p6",18,6},
+    {"Francium","[Rn]7s1",1,7},
+    {"Radium","[Rn]7s2",2,7},
+    {"Actinium","[Rn]6d1 7s2",3,7},
+    {"Thorium","[Rn]6d2 7s2",3,7},
+    {"Protactinium","[Rn]5f2 6d1 7s2",3,7},
+    {"Uranium","[Rn]5f3 6d1 7s2",3,7},
+    {"Neptunium","[Rn]5f4 6d1 7s2",3,7},
+    {"Plutonium","[Rn]5f6 7s2",3,7},
+    {"Americium","[Rn]5f7 7s2",3,7},
+    {"Curium","[Rn]5f7 6d1 7s2",3,7},
+    {"Berkelium","[Rn]5f9 7s2",3,7},
+    {"Californium","[Rn]5f10 7s2",3,7},
+    {"Einsteinium","[Rn]5f11 7s2",3,7},
+    {"Fermium","[Rn]5f12 7s2",3,7},
+    {"Mendelevium","[Rn]5f13 7s2",3,7},
+    {"Nobelium","[Rn]5f14 7s2",3,7},
+    {"Lawrencium","[Rn]5f14 7s2 7p1",3,7},
+    {"Rutherfordium","[Rn]5f14 6d2 7s2",4,7},
+    {"Dubnium","[Rn]5f14 6d3 7s2",5,7},
+    {"Seaborgium","[Rn]5f14 6d4 7s2",6,7},
+    {"Bohrium","[Rn]5f14 6d5 7s2",7,7},
+    {"Hassium","[Rn]5f14 6d6 7s2",8,7},
+    {"Meitnerium","[Rn]5f14 6d7 7s2",9,7},
+    {"Darmstadtium","[Rn]5f14 6d8 7s2",10,7},
+    {"Roentgenium","[Rn]5f14 6d9 7s2",11,7},
+    {"Copernicium","[Rn]5f14 6d10 7s2",12,7},
+    {"Nihonium","[Rn]5f14 6d10 7s2 7p1",13,7},
+    {"Flerovium","[Rn]5f14 6d10 7s2 7p2",14,7},
+    {"Moscovium","[Rn]5f14 6d10 7s2 7p3",15,7},
+    {"Livermorium","[Rn]5f14 6d10 7s2 7p4",16,7},
+    {"Tennessine","[Rn]5f14 6d10 7s2 7p5",17,7},
+    {"Oganesson","[Rn]5f14 6d10 7s2 7p6",18,7}
+};
+
 static const char* CONST_CATS[] = {
     "Physical","Math","EE","Astronomy","Planet","DwarfMoon",
     "Geo","Atmos","Ocean","Element","Biology"
 };
-static const int CONST_NCAT = sizeof(CONST_CATS) / sizeof(char*);
 
+static const int CONST_NCAT = sizeof(CONST_CATS) / sizeof(char*);
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 6 / 20 ─ 単位換算データベース (532 単位 / 20 カテゴリ)          ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 struct UnitConv {
     const char* name;
     const char* sym;
@@ -2431,8 +2913,8 @@ static const char* UNIT_CATS[] = {
     "Temperature","Angle","Time","Digital Info","Frequency",
     "Volumetric Flow","Density","Viscosity","Radiation","Misc Quantity"
 };
-static const int UNIT_NCAT = sizeof(UNIT_CATS) / sizeof(char*);
 
+static const int UNIT_NCAT = sizeof(UNIT_CATS) / sizeof(char*);
 static const UnitConv unitDB[] PROGMEM = {
     // ── Length (62) ──
     {"meter","m",1.0,0,UC_LENGTH},
@@ -2497,7 +2979,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"cable","cable",185.2,0,UC_LENGTH},
     {"link","link",0.201168,0,UC_LENGTH},
     {"nautical league","nlea",5556.0,0,UC_LENGTH},
-
     // ── Area (45) ──
     {"square meter","m2",1.0,0,UC_AREA},
     {"square kilometer","km2",1e6,0,UC_AREA},
@@ -2544,7 +3025,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"circular inch","cin",5.067075e-4,0,UC_AREA},
     {"square micrometre","um2",1e-12,0,UC_AREA},
     {"square nanometer","nm2",1e-18,0,UC_AREA},
-
     // ── Volume (57) ──
     {"cubic meter","m3",1.0,0,UC_VOLUME},
     {"cubic centimeter","cm3",1e-6,0,UC_VOLUME},
@@ -2603,7 +3083,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"UK dry gallon","dgal_UK",0.00454609,0,UC_VOLUME},
     {"teaspoon (metric)","tsp_m",5e-6,0,UC_VOLUME},
     {"tablespoon (metric)","tbsp_m",15e-6,0,UC_VOLUME},
-
     // ── Mass (51) ──
     {"kilogram","kg",1.0,0,UC_MASS},
     {"gram","g",0.001,0,UC_MASS},
@@ -2656,7 +3135,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"scruple (ap)","s_ap2",0.00129598,0,UC_MASS},
     {"metric grain","gr_m",5e-5,0,UC_MASS},
     {"dalton","Da",1.66053906660e-27,0,UC_MASS},
-
     // ── Velocity (26) ──
     {"meter per second","m/s",1.0,0,UC_VELOCITY},
     {"kilometer per hour","km/h",0.27777777777778,0,UC_VELOCITY},
@@ -2684,7 +3162,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"furlong per day","fur/d",0.00232828,0,UC_VELOCITY},
     {"inch per year","in/yr",8.04864e-10,0,UC_VELOCITY},
     {"km per day","km/d",0.0115741,0,UC_VELOCITY},
-
     // ── Acceleration (14) ──
     {"meter per second^2","m/s2",1.0,0,UC_ACCEL},
     {"standard gravity","g0",9.80665,0,UC_ACCEL},
@@ -2700,7 +3177,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"knot per hour","kn/h",1.42873e-4,0,UC_ACCEL},
     {"m per hour per second","m/h/s",2.77778e-4,0,UC_ACCEL},
     {"gravity (Moon)","g_moon",1.62,0,UC_ACCEL},
-
     // ── Force (20) ──
     {"newton","N",1.0,0,UC_FORCE},
     {"dyne","dyn",1e-5,0,UC_FORCE},
@@ -2722,7 +3198,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"decanewton","daN",10.0,0,UC_FORCE},
     {"pond","pond",0.00980665,0,UC_FORCE},
     {"grave","grave",9.80665,0,UC_FORCE},
-
     // ── Pressure (33) ──
     {"pascal","Pa",1.0,0,UC_PRESSURE},
     {"hectopascal","hPa",100.0,0,UC_PRESSURE},
@@ -2757,7 +3232,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"cm of water","cmH2O",98.0665,0,UC_PRESSURE},
     {"kgf per square millimeter","kgf/mm2",9806650.0,0,UC_PRESSURE},
     {"newton per square millimeter","N/mm2",1e6,0,UC_PRESSURE},
-
     // ── Energy (39) ──
     {"joule","J",1.0,0,UC_ENERGY},
     {"kilojoule","kJ",1000.0,0,UC_ENERGY},
@@ -2798,7 +3272,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"kilocalorie (th)","kcal_th",4184.0,0,UC_ENERGY},
     {"electron mass energy","E_me",8.1871057769e-14,0,UC_ENERGY},
     {"proton mass energy","E_mp",1.5032776158e-10,0,UC_ENERGY},
-
     // ── Power (24) ──
     {"watt","W",1.0,0,UC_POWER},
     {"kilowatt","kW",1000.0,0,UC_POWER},
@@ -2824,7 +3297,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"water horsepower","whp",746.043,0,UC_POWER},
     {"air horsepower","ahp",745.7,0,UC_POWER},
     {"kilocalorie per minute","kcal/min",69.7333,0,UC_POWER},
-
     // ── Temperature (8) ──
     {"Celsius","C",1.0,273.15,UC_TEMP},
     {"Fahrenheit","F",5.0/9.0,459.67*5.0/9.0,UC_TEMP},
@@ -2834,7 +3306,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"Newton scale","N_t",100.0/33.0,273.15,UC_TEMP},
     {"Romer scale","Ro",40.0/21.0,273.15 + 7.5*40.0/21.0,UC_TEMP},
     {"Delisle scale","De",-2.0/3.0,373.15,UC_TEMP},
-
     // ── Angle (12) ──
     {"degree","deg",M_PI/180.0,0,UC_ANGLE},
     {"radian","rad",1.0,0,UC_ANGLE},
@@ -2848,7 +3319,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"sextant","sext",M_PI/3.0,0,UC_ANGLE},
     {"octant","oct",M_PI/4.0,0,UC_ANGLE},
     {"sign (angle)","sign_a",M_PI/6.0,0,UC_ANGLE},
-
     // ── Time (20) ──
     {"second","s",1.0,0,UC_TIME},
     {"minute","min",60.0,0,UC_TIME},
@@ -2870,7 +3340,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"decade","decade",3.15576e8,0,UC_TIME},
     {"millennium","mil_a2",3.15576e10,0,UC_TIME},
     {"sidereal day","sd",86164.0905,0,UC_TIME},
-
     // ── Digital (25) ──
     {"bit","bit",1.0,0,UC_DIGITAL},
     {"byte","B",8.0,0,UC_DIGITAL},
@@ -2897,7 +3366,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"zebibyte","ZiB",9.4447329657393e21,0,UC_DIGITAL},
     {"yobibyte","YiB",9.671406556917e24,0,UC_DIGITAL},
     {"floppy (3.5in)","floppy",1.47456e7,0,UC_DIGITAL},
-
     // ── Frequency (12) ──
     {"hertz","Hz",1.0,0,UC_FREQ},
     {"kilohertz","kHz",1000.0,0,UC_FREQ},
@@ -2911,7 +3379,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"exahertz","EHz",1e18,0,UC_FREQ},
     {"beat per minute","bpm",0.0166666667,0,UC_FREQ},
     {"cycle per second","cps",1.0,0,UC_FREQ},
-
     // ── Volumetric Flow (20) ──
     {"cubic meter per s","m3/s",1.0,0,UC_FLOW},
     {"cubic meter per h","m3/h",0.000277778,0,UC_FLOW},
@@ -2933,7 +3400,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"Sverdrup","Sv_fl",1e6,0,UC_FLOW},
     {"lambda","lambda",1e-9,0,UC_FLOW},
     {"cubic foot per s","cfs",0.0283168,0,UC_FLOW},
-
     // ── Density (20) ──
     {"kg per m^3","kg/m3",1.0,0,UC_DENSITY},
     {"g per cm^3","g/cm3",1000.0,0,UC_DENSITY},
@@ -2955,7 +3421,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"air density (STP)","rho_a",1.2922,0,UC_DENSITY},
     {"mercury density","rho_Hg",13534.0,0,UC_DENSITY},
     {"mean Earth density","rho_E",5514.0,0,UC_DENSITY},
-
     // ── Viscosity (15) ──
     {"pascal-second","Pa s",1.0,0,UC_VISC},
     {"poise","P",0.1,0,UC_VISC},
@@ -2972,7 +3437,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"micropoise","uP",1e-7,0,UC_VISC},
     {"poundal-sec per ft^2","pdl s/ft2",1.48816,0,UC_VISC},
     {"pound per foot hour","lb/ft/h",0.000413379,0,UC_VISC},
-
     // ── Radiation (13) ──
     {"becquerel","Bq",1.0,0,UC_RADIATION},
     {"curie","Ci",3.7e10,0,UC_RADIATION},
@@ -2987,7 +3451,6 @@ static const UnitConv unitDB[] PROGMEM = {
     {"exposure rate","exp_rate",1.0,0,UC_RADIATION},
     {"absorbed dose rate","abs_rate",1.0,0,UC_RADIATION},
     {"dose equivalent rate","dose_rate",1.0,0,UC_RADIATION},
-
     // ── Misc (16) ──
     {"dozen","dozen",12.0,0,UC_MISC},
     {"gross","gross",144.0,0,UC_MISC},
@@ -3006,12 +3469,11 @@ static const UnitConv unitDB[] PROGMEM = {
     {"gross dozen","gdoz",1728.0,0,UC_MISC},
     {"counting measure","count",1.0,0,UC_MISC},
 };
-static const int unitN = sizeof(unitDB) / sizeof(UnitConv);
 
+static const int unitN = sizeof(unitDB) / sizeof(UnitConv);
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 7 / 20 ─ 科学法則辞書 Part 1 (物理100 + 化学70)                 ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 static const LawEntry lawDB[] PROGMEM = {
     {"Newton's First Law","v = const (F = 0)","External force zero -> velocity constant. Inertia.","Physics"},
     {"Newton's Second Law","F = m a","Net force = mass x acceleration. F=dp/dt.","Physics"},
@@ -3114,7 +3576,6 @@ static const LawEntry lawDB[] PROGMEM = {
     {"Larmor Formula","P = q^2 a^2 / (6 pi eps0 c^3)","Power radiated by accelerated charge.","Physics"},
     {"Cherenkov Radiation","v > c/n","Charged particle exceeds light speed in medium.","Physics"},
     {"Drude Model","sigma = n e^2 tau / m","Electrical conductivity of metals.","Physics"},
-
     {"Law of Conservation of Mass","Sum m_react = Sum m_prod","Lavoisier 1789. No mass loss in chemical reactions.","Chemistry"},
     {"Law of Definite Proportions","fixed mass ratio","Compound has same composition by mass everywhere.","Chemistry"},
     {"Law of Multiple Proportions","Small whole numbers","Different compounds of same elements: small int ratios.","Chemistry"},
@@ -3192,7 +3653,6 @@ static const LawEntry lawDB[] PROGMEM = {
 // ║                              生物20 + 電気電子11 = 131)              ║
 // ║  実装方針: lawDB[] は独立配列、lawDB2[] を別途定義、lawAt() で統合   ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 static const LawEntry lawDB2[] PROGMEM = {
     {"Pythagorean Theorem","a^2 + b^2 = c^2","Right triangle: hypotenuse squared = sum of legs squared.","Math"},
     {"Fundamental Theorem of Arithmetic","n = prod p_i^a_i (unique)","Every integer > 1 has unique prime factorization.","Math"},
@@ -3244,7 +3704,6 @@ static const LawEntry lawDB2[] PROGMEM = {
     {"Banach-Tarski Paradox","Sphere split + reconstructed = 2","Counterintuitive consequence of AC.","Math"},
     {"Cantor's Diagonal Argument","|R| > |N|","Real numbers uncountable.","Math"},
     {"Stokes' Theorem","integ_S curl F dA = circ_dS F dl","Generalization of Green's, Gauss's, classical Stokes.","Math"},
-
     {"Plate Tectonics","Lithosphere plates move","Earth's surface composed of moving rigid plates.","GeoSci"},
     {"Continental Drift","Continents migrate (Wegener)","Pangea broke up; continents move slowly.","GeoSci"},
     {"Sea-Floor Spreading","Mid-ocean ridge: new crust","Ocean floor expands at ridges.","GeoSci"},
@@ -3275,7 +3734,6 @@ static const LawEntry lawDB2[] PROGMEM = {
     {"Modified Mercalli Scale","I-XII intensity","Earthquake felt intensity.","GeoSci"},
     {"Richter Magnitude","M_L = log10(A) + corr","Seismic wave amplitude logarithm.","GeoSci"},
     {"Moment Magnitude","M_w = (2/3) log10(M0) - 10.7","Modern seismic moment based scale.","GeoSci"},
-
     {"Hubble's Law (Astro)","v = H0 d","Galaxies recede with speed proportional to distance.","Astronomy"},
     {"Kepler's First Law (Astro)","Elliptical orbits","Planets move on ellipses with sun at focus.","Astronomy"},
     {"Kepler's Second Law (Astro)","Equal areas in equal times","Conservation of angular momentum.","Astronomy"},
@@ -3296,7 +3754,6 @@ static const LawEntry lawDB2[] PROGMEM = {
     {"Saha Equation","n_i+1 n_e / n_i = ...","Ionization in stellar atmospheres.","Astronomy"},
     {"Hayashi Track","Pre-main-sequence vertical track","Convective protostar evolution on HR.","Astronomy"},
     {"Henyey Track","Pre-MS horizontal track","Radiative protostar evolution on HR.","Astronomy"},
-
     {"Mendel's Law of Segregation","Allele pairs separate in gametes","1st law: each allele segregates independently.","Biology"},
     {"Mendel's Law of Independent Assortment","Genes assort independently","2nd law: different genes inherit independently.","Biology"},
     {"Mendel's Law of Dominance","Dominant masks recessive","3rd law: in F1, dominant trait expressed.","Biology"},
@@ -3317,7 +3774,6 @@ static const LawEntry lawDB2[] PROGMEM = {
     {"Bergmann's Rule","Cold climate -> larger body","Endotherm body size vs latitude.","Biology"},
     {"Allen's Rule","Cold climate -> shorter limbs","Body extremity length vs climate.","Biology"},
     {"Restriction Enzyme Recognition","Palindromic 4-8 bp sequences","EcoRI: GAATTC, etc.","Biology"},
-
     {"Ohm's Law (EE)","V = I R","Linear conductor: voltage = current x resistance.","EE"},
     {"Kirchhoff's Current Law (EE)","Sum I = 0 at node","Charge conservation.","EE"},
     {"Kirchhoff's Voltage Law (EE)","Sum V = 0 around loop","Energy conservation.","EE"},
@@ -3333,23 +3789,100 @@ static const LawEntry lawDB2[] PROGMEM = {
 
 static const int lawN  = sizeof(lawDB)  / sizeof(LawEntry);
 static const int lawN2 = sizeof(lawDB2) / sizeof(LawEntry);
-
 static const char* LAW_CATS[] = {
     "Physics", "Chemistry", "Math", "GeoSci", "Astronomy", "Biology", "EE"
 };
-static const int LAW_NCAT = sizeof(LAW_CATS) / sizeof(char*);
 
-inline const LawEntry* lawAt(int idx) {
+static const int LAW_NCAT = sizeof(LAW_CATS) / sizeof(char*);
+static inline const LawEntry* lawAt(int idx) {
     if (idx < lawN)            return &lawDB[idx];
     if (idx < lawN + lawN2)    return &lawDB2[idx - lawN];
     return nullptr;
 }
-static const int LAW_TOTAL = lawN + lawN2;
 
+static const int LAW_TOTAL = lawN + lawN2;
+struct LawCalc {
+    const char* name;
+    const char* v;
+    const char* f[4];
+};
+
+static const LawCalc lawCalcDB[] = {
+    {"Newton 2nd: F = m*a", "Fma", {"m*a", "F/a", "F/m", ""}},
+    {"Ohm: V = I*R", "VIR", {"I*R", "V/R", "V/I", ""}},
+    {"Kinetic: E = m*v^2/2", "Emv", {"m*v^2/2", "2*E/v^2", "sqrt(2*E/m)", ""}},
+    {"Elec Power: P = V*I", "PVI", {"V*I", "P/I", "P/V", ""}},
+    {"Density: rho = m/V", "rmV", {"m/V", "r*V", "m/r", ""}},
+    {"Power: P = I^2*R", "PIR", {"I^2*R", "sqrt(P/R)", "P/I^2", ""}},
+    {"Wave: v = f*L", "vfL", {"f*L", "v/L", "v/f", ""}},
+    {"Freq: f = 1/T", "fT", {"1/T", "1/f", "", ""}},
+    {"Stefan: j = sigma*T^4", "jT", {"5.670374419e-8*T^4", "(j/5.670374419e-8)^0.25", "", ""}},
+    {"Wien: L = b/T", "LT", {"2.897771955e-3/T", "2.897771955e-3/L", "", ""}},
+    {"Einstein: E = m*c^2", "Em", {"m*89875517873681764", "E/89875517873681764", "", ""}},
+    {"Coulomb: F = k*q^2/r^2", "Fqr", {"8.987551787e9*q^2/r^2", "sqrt(F*r^2/8.987551787e9)", "sqrt(8.987551787e9*q^2/F)", ""}},
+    {"Photon: E = h*f", "Ef", {"6.62607015e-34*f", "E/6.62607015e-34", "", ""}},
+    {"de Broglie: L = h/p", "Lp", {"6.62607015e-34/p", "6.62607015e-34/L", "", ""}},
+    {"Half-life: t = ln2/k", "tk", {"0.693147180559945/k", "0.693147180559945/t", "", ""}}
+};
+
+static const int lawCalcN = sizeof(lawCalcDB) / sizeof(LawCalc);
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 9 / 20 ─ SciRef モード                                          ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
+    struct DimVec {
+        int8_t d[7];
+        DimVec() { memset(d, 0, 7); }
+        DimVec(int8_t L, int8_t M, int8_t T, int8_t I=0, int8_t Th=0, int8_t N=0, int8_t J=0) {
+            d[0]=L; d[1]=M; d[2]=T; d[3]=I; d[4]=Th; d[5]=N; d[6]=J;
+        }
+        bool operator==(const DimVec& o) const { for(int i=0;i<7;i++) if(d[i]!=o.d[i]) return false; return true; }
+        bool operator!=(const DimVec& o) const { return !(*this==o); }
+        DimVec operator+(const DimVec& o) const { DimVec r; for(int i=0;i<7;i++) r.d[i]=d[i]+o.d[i]; return r; }
+        DimVec operator-(const DimVec& o) const { DimVec r; for(int i=0;i<7;i++) r.d[i]=d[i]-o.d[i]; return r; }
+        DimVec scale(int n) const { DimVec r; for(int i=0;i<7;i++) r.d[i]=d[i]*n; return r; }
+        bool isDimless() const { for(int i=0;i<7;i++) if(d[i]) return false; return true; }
+        void toString(char* out, int len) const {
+            static const char* nm[7] = {"L","M","T","I","Th","N","J"};
+            out[0]=0; bool first=true;
+            for (int i=0;i<7;i++) {
+                if (!d[i]) continue;
+                if (!first) strncat(out, "*", len-strlen(out)-1);
+                char tk[12];
+                if (d[i]==1) snprintf(tk, sizeof(tk), "%s", nm[i]);
+                else         snprintf(tk, sizeof(tk), "%s^%d", nm[i], (int)d[i]);
+                strncat(out, tk, len-strlen(out)-1);
+                first = false;
+            }
+            if (first) snprintf(out, len, "1");
+        }
+    };
+    struct Quantity {
+        double v;
+        DimVec dim;
+        Quantity() : v(0) {}
+        Quantity(double _v, DimVec _d) : v(_v), dim(_d) {}
+    };
+    struct UnitDim { const char* name; double scale; DimVec dim; };
+    static const UnitDim unitDimDB[] = {
+        {"m",1.0,{1,0,0}}, {"km",1000.0,{1,0,0}}, {"cm",0.01,{1,0,0}}, {"mm",0.001,{1,0,0}},
+        {"in",0.0254,{1,0,0}}, {"ft",0.3048,{1,0,0}}, {"mi",1609.344,{1,0,0}},
+        {"kg",1.0,{0,1,0}}, {"g",0.001,{0,1,0}}, {"mg",1e-6,{0,1,0}}, {"t",1000.0,{0,1,0}},
+        {"lb",0.45359237,{0,1,0}}, {"oz",0.028349523125,{0,1,0}},
+        {"s",1.0,{0,0,1}}, {"ms",0.001,{0,0,1}}, {"min",60.0,{0,0,1}}, {"h",3600.0,{0,0,1}},
+        {"A",1.0,{0,0,0,1}}, {"mA",0.001,{0,0,0,1}},
+        {"K",1.0,{0,0,0,0,1}}, {"mol",1.0,{0,0,0,0,0,1}}, {"cd",1.0,{0,0,0,0,0,0,1}},
+        {"N",1.0,{1,1,-2}}, {"J",1.0,{2,1,-2}}, {"kJ",1000.0,{2,1,-2}},
+        {"cal",4.184,{2,1,-2}}, {"kcal",4184.0,{2,1,-2}}, {"eV",1.602176634e-19,{2,1,-2}},
+        {"W",1.0,{2,1,-3}}, {"kW",1000.0,{2,1,-3}}, {"hp",745.7,{2,1,-3}},
+        {"Pa",1.0,{-1,1,-2}}, {"bar",100000.0,{-1,1,-2}}, {"atm",101325.0,{-1,1,-2}},
+        {"Hz",1.0,{0,0,-1}}, {"kHz",1000.0,{0,0,-1}},
+        {"C",1.0,{0,0,1,1}}, {"V",1.0,{2,1,-3,-1}}, {"ohm",1.0,{2,1,-3,-2}},
+        {"L",0.001,{3,0,0}}, {"mL",1e-6,{3,0,0}},
+        {"m2",1.0,{2,0,0}}, {"kph",0.277777777,{1,0,-1}}, {"mph",0.44704,{1,0,-1}},
+        {"kn",0.514444444,{1,0,-1}}
+    };
+    static const int unitDimN = sizeof(unitDimDB) / sizeof(UnitDim);
+    // 10-1: 次元解析用ベクトル (L, M, T, I, Th, N, J)
 class SciRef {
 public:
     void run() {
@@ -3359,22 +3892,210 @@ public:
                 "Scientific Laws (300)",
                 "Unit Converter (532)",
                 "Periodic Table (118)",
+                "Law Auto-Calc (15)",
+                "Dim Analysis (units)",
                 "Search by Symbol",
                 "Back"
             };
-            int s = DM.menu("SciRef", items, 6);
-            if (s < 0 || s == 5) return;
+            int s = DM.menu("SciRef", items, 8);
+            if (s < 0 || s == 7) return;
             switch (s) {
                 case 0: browseConstants(); break;
                 case 1: browseLaws();      break;
                 case 2: unitConvert();     break;
                 case 3: periodicTable();   break;
-                case 4: searchSymbol();    break;
+                case 4: lawAutoCalcMenu(); break;
+                case 5: dimAnalysisMenu(); break;
+                case 6: searchSymbol();    break;
             }
         }
     }
-
 private:
+    void lawAutoCalcMenu() {
+        const char* L[32];
+        for (int i = 0; i < lawCalcN && i < 32; i++) L[i] = lawCalcDB[i].name;
+        int s = DM.menu("Law Auto-Calc", L, lawCalcN);
+        if (s < 0) return;
+        lawAutoCalc(s);
+    }
+
+    void lawAutoCalc(int idx) {
+        const char* v = lawCalcDB[idx].v;
+        int nv = strlen(v);
+        char lb[4][10]; const char* L[4];
+        for (int i = 0; i < nv; i++) { snprintf(lb[i], sizeof(lb[i]), "solve %c", v[i]); L[i] = lb[i]; }
+        int tg = DM.menu("Solve for", L, nv);
+        if (tg < 0) return;
+        ExprEval::Subst s[4]; int ns = 0;
+        char b[20];
+        for (int i = 0; i < nv; i++) {
+            if (i == tg) continue;
+            strcpy(b, "0");
+            char p[8]; snprintf(p, sizeof(p), "%c =", v[i]);
+            if (!DM.inputLine(p, b, sizeof(b))) return;
+            s[ns].var = v[i];
+            s[ns].val = atof(b);
+            ns++;
+        }
+        auto r = gEv.eval(lawCalcDB[idx].f[tg], s, ns);
+        if (!r.ok) { DM.notify("eval fail", C_ERR); return; }
+        char vs[24]; formatNum(r.val, vs, sizeof(vs));
+        char m[48]; snprintf(m, sizeof(m), "%c = %s", v[tg], vs);
+        DM.notify(m, C_OK, 2000);
+        G.ans = r.val;
+    }
+
+    static void dSkip(const char*& p) { while (*p == ' ' || *p == '\t') p++; }
+    static int findUnitAt(const char* p, int& ulen, double& prefixScale) {
+        int best = -1, bestLen = 0;
+        prefixScale = 1.0;
+        for (int i = 0; i < unitDimN; i++) {
+            int n = strlen(unitDimDB[i].name);
+            if (n <= bestLen) continue;
+            if (strncmp(p, unitDimDB[i].name, n) != 0) continue;
+            char nc = p[n];
+            if (nc && (isalnum((unsigned char)nc) || nc == '_')) continue;
+            best = i; bestLen = n;
+        }
+        if (best >= 0) { ulen = bestLen; return best; }
+        static const char* baseUnits[] = {"m","g","s","A","K","mol","cd","N","J","W","Pa","Hz","C","V","ohm","L",0};
+        auto tryPfx = [&](int prefLen, double pf) -> int {
+            for (int i = 0; baseUnits[i]; i++) {
+                const char* bu = baseUnits[i];
+                int bl = strlen(bu);
+                if (strncmp(p + prefLen, bu, bl) != 0) continue;
+                char nc = p[prefLen + bl];
+                if (nc && (isalnum((unsigned char)nc) || nc == '_')) continue;
+                for (int k = 0; k < unitDimN; k++) {
+                    if (strcmp(unitDimDB[k].name, bu) == 0) {
+                        ulen = prefLen + bl;
+                        prefixScale = pf;
+                        return k;
+                    }
+                }
+            }
+            return -1;
+        };
+        if (p[0] == 'd' && p[1] == 'a') { int r = tryPfx(2, 1e1); if (r >= 0) return r; }
+        static const char* pfx = "YZEPTGMkhdcmunpfazy";
+        static const double fac[] = {1e24,1e21,1e18,1e15,1e12,1e9,1e6,1e3,1e2,1e-1,1e-2,1e-3,1e-6,1e-9,1e-12,1e-15,1e-18,1e-21,1e-24};
+        if (p[0] && p[1]) {
+            for (int pi = 0; pfx[pi]; pi++) {
+                if (pfx[pi] == p[0]) {
+                    int r = tryPfx(1, fac[pi]);
+                    if (r >= 0) return r;
+                    break;
+                }
+            }
+        }
+        ulen = 0;
+        return -1;
+    }
+
+    static Quantity dParseExpr(const char*& p, bool& err);
+    static Quantity dParseAtom(const char*& p, bool& err) {
+        dSkip(p);
+        if (*p == '(') {
+            p++;
+            Quantity q = dParseExpr(p, err);
+            dSkip(p);
+            if (*p == ')') p++; else err = true;
+            return q;
+        }
+        if (*p == '+' || *p == '-') {
+            bool neg = (*p == '-'); p++;
+            Quantity q = dParseAtom(p, err);
+            if (neg) q.v = -q.v;
+            return q;
+        }
+        char* end;
+        double v = strtod(p, &end);
+        if (end == p) { err = true; return Quantity(0, DimVec()); }
+        p = end;
+        dSkip(p);
+        int ulen = 0;
+        double prefixScale = 1.0;
+        int ui = findUnitAt(p, ulen, prefixScale);
+        if (ui < 0) return Quantity(v, DimVec());
+        p += ulen;
+        double unitScale = unitDimDB[ui].scale * prefixScale;
+        DimVec unitDim = unitDimDB[ui].dim;
+        dSkip(p);
+        if (*p == '^') {
+            p++;
+            char* e2;
+            long n = strtol(p, &e2, 10);
+            if (e2 == p) { err = true; return Quantity(0, DimVec()); }
+            p = e2;
+            if (n < -9 || n > 9) { err = true; return Quantity(0, DimVec()); }
+            unitScale = pow(unitScale, (double)n);
+            unitDim = unitDim.scale((int)n);
+        }
+        return Quantity(v * unitScale, unitDim);
+    }
+
+    static Quantity dParsePower(const char*& p, bool& err) {
+        Quantity a = dParseAtom(p, err);
+        if (err) return a;
+        dSkip(p);
+        if (*p == '^') {
+            p++;
+            char* end;
+            long n = strtol(p, &end, 10);
+            if (end == p) { err = true; return a; }
+            p = end;
+            if (n < -9 || n > 9) { err = true; return a; }
+            a.v = pow(a.v, (double)n);
+            a.dim = a.dim.scale((int)n);
+        }
+        return a;
+    }
+
+    static Quantity dParseTerm(const char*& p, bool& err) {
+        Quantity a = dParsePower(p, err);
+        while (!err) {
+            dSkip(p);
+            if (*p == '*') {
+                p++;
+                Quantity b = dParsePower(p, err);
+                if (err) return a;
+                a.v *= b.v;
+                a.dim = a.dim + b.dim;
+            } else if (*p == '/') {
+                p++;
+                Quantity b = dParsePower(p, err);
+                if (err) return a;
+                if (b.v == 0) { err = true; return a; }
+                a.v /= b.v;
+                a.dim = a.dim - b.dim;
+            } else break;
+        }
+        return a;
+    }
+
+    void doDimEval(const char* s) {
+        bool err = false;
+        const char* p = s;
+        Quantity q = dParseExpr(p, err);
+        dSkip(p);
+        if (err || *p) { DM.notify(err ? "dim/syntax mismatch" : "trailing chars", C_ERR, 1200); return; }
+        char buf[64];
+        if (q.dim.isDimless()) {
+            snprintf(buf, sizeof(buf), "= %.6g (dimensionless)", q.v);
+        } else {
+            char ds[32]; q.dim.toString(ds, sizeof(ds));
+            snprintf(buf, sizeof(buf), "= %.6g [%s]", q.v, ds);
+        }
+        DM.notify(buf, C_OK, 2500);
+        G.ans = q.v; G.ansComplex = false;
+    }
+
+    void dimAnalysisMenu() {
+        char b[60] = "3 m + 2 ft";
+        if (!DM.inputLine("expr (e.g. 3 m + 2 ft):", b, sizeof(b))) return;
+        doDimEval(b);
+    }
+
     void browseConstants() {
         while (true) {
             int cat = DM.menu("Const Category", CONST_CATS, CONST_NCAT);
@@ -3387,9 +4108,11 @@ private:
             }
             if (n == 0) { DM.notify("Empty category", C_WARN); continue; }
             char** labels = (char**)malloc(n * sizeof(char*));
+            if (!labels) return;
             for (int i = 0; i < n; i++) {
                 Constant c; memcpy_P(&c, &constDB[idx[i]], sizeof(Constant));
-                labels[i] = (char*)malloc(48);
+                labels[i] = (char*)malloc(48); if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
+                if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
                 int symLen = strlen(c.sym);
                 if (symLen > 7) symLen = 7;
                 char tmp[10] = "       ";
@@ -3431,7 +4154,7 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y') ||
                 M5Cardputer.Keyboard.isKeyPressed('Y')) {
                 G.ans = c.value;
@@ -3473,9 +4196,11 @@ private:
             }
             if (n == 0) { DM.notify("Empty", C_WARN); continue; }
             char** labels = (char**)malloc(n * sizeof(char*));
+            if (!labels) return;
             for (int i = 0; i < n; i++) {
                 LawEntry tmp; memcpy_P(&tmp, lawAt(idx[i]), sizeof(LawEntry));
-                labels[i] = (char*)malloc(48);
+                labels[i] = (char*)malloc(48); if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
+                if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
                 snprintf(labels[i], 48, "%s", tmp.name);
             }
             const char** clabels = (const char**)labels;
@@ -3506,7 +4231,7 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('s') ||
                 M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("law");
         }
@@ -3524,7 +4249,8 @@ private:
         char** labels = (char**)malloc(n * sizeof(char*));
         for (int i = 0; i < n; i++) {
             UnitConv u; memcpy_P(&u, &unitDB[idx[i]], sizeof(UnitConv));
-            labels[i] = (char*)malloc(40);
+            labels[i] = (char*)malloc(40); if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); DM.notify("malloc fail", C_ERR); return; }
+            if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
             snprintf(labels[i], 40, "%s (%s)", u.sym, u.name);
         }
         const char** clabels = (const char**)labels;
@@ -3541,12 +4267,10 @@ private:
             memcpy_P(&ut, &unitDB[idx[to]],   sizeof(UnitConv));
             double base = v * uf.factor + uf.offset;
             double out  = (base - ut.offset) / ut.factor;
-
             auto& d = M5Cardputer.Display;
             d.fillScreen(C_BG);
             DM.header("Result");
             DM.footer("Y:Ans", "S:Save", "ESC:back");
-
             char l1[40], l2[40], l3[40];
             char vs[24]; formatNum(v, vs, sizeof(vs));
             char os[24]; formatNum(out, os, sizeof(os));
@@ -3560,12 +4284,11 @@ private:
             d.setTextColor(C_DIM, C_BG);
             snprintf(l3, sizeof(l3), "[%s]", UNIT_CATS[cat]);
             d.drawString(l3, 4, LCD_H - FTR_H - 14);
-
             G.ans = out; G.ansComplex = false;
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) break;
+                if (IS_ESC) break;
                 if (M5Cardputer.Keyboard.isKeyPressed('y') ||
                     M5Cardputer.Keyboard.isKeyPressed('Y')) {
                     DM.notify("-> Ans", C_OK); break;
@@ -3623,11 +4346,10 @@ cleanup:
                      sel+1, PERIODIC[sel], ATOMIC_W[sel]);
             d.setTextColor(C_FG, C_BG);
             d.drawString(info, 4, LCD_H - FTR_H - 13);
-
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 int curG = POS[sel][0], curP = POS[sel][1];
                 if (st.fn && IS_LEFT)  {
                     int best = -1, bestG = -1;
@@ -3676,33 +4398,42 @@ cleanup:
 
     void showElementDetail(int z) {
         auto& d = M5Cardputer.Display;
+        ElementInfo ei; memcpy_P(&ei, &ELEM_INFO[z], sizeof(ElementInfo));
+        const char* cls;
+        if (z == 0)                    cls = "Nonmetal";
+        else if (z >= 56 && z <= 70)   cls = "Lanthanide";
+        else if (z >= 88 && z <= 102)  cls = "Actinide";
+        else if (ei.group == 1)        cls = "Alkali metal";
+        else if (ei.group == 2)        cls = "Alkaline earth";
+        else if (ei.group >= 3 && ei.group <= 12) cls = "Transition metal";
+        else if (ei.group == 17)       cls = "Halogen";
+        else if (ei.group == 18)       cls = "Noble gas";
+        else if (ei.group >= 13)       cls = "Post-transition";
+        else                           cls = "Other";
         d.fillScreen(C_BG);
-        char title[16]; snprintf(title, sizeof(title), "Element %d", z+1);
+        char title[28]; snprintf(title, sizeof(title), "Z=%d %s", z+1, PERIODIC[z]);
         DM.header(title);
         DM.footer("Y:weight->Ans", "", "ESC:back");
-        d.setTextSize(4);
+        d.setTextSize(3);
         d.setTextColor(C_ACC, C_BG);
-        d.drawString(PERIODIC[z], 8, HDR_H + 8);
+        d.drawString(PERIODIC[z], 4, HDR_H + 2);
         d.setTextSize(1);
-        char zs[16]; snprintf(zs, sizeof(zs), "Z=%d", z+1);
-        d.setTextColor(C_DIM, C_BG);
-        d.drawString(zs, 8, HDR_H + 56);
-        char ws[24]; snprintf(ws, sizeof(ws), "%.4g g/mol", ATOMIC_W[z]);
-        d.setTextColor(C_OK, C_BG);
-        d.drawString(ws, 80, HDR_H + 16);
-        const char* group = "";
-        if (z+1 == 1)                  group = "Hydrogen";
-        else if (z+1 == 2)             group = "Noble gas";
-        else if (z >= 2 && z <= 3)     group = "Alkali/Earth";
-        else if (z >= 56 && z <= 70)   group = "Lanthanide";
-        else if (z >= 88 && z <= 102)  group = "Actinide";
-        else                           group = "Other";
         d.setTextColor(C_FG, C_BG);
-        d.drawString(group, 80, HDR_H + 32);
+        d.drawString(ei.nameEn, 4, HDR_H + 26);
+        char ws[36]; snprintf(ws, sizeof(ws), "Mass: %.5g g/mol", ATOMIC_W[z]);
+        d.setTextColor(C_OK, C_BG);
+        d.drawString(ws, 4, HDR_H + 40);
+        d.setTextColor(C_DIM, C_BG);
+        char cfg[44]; snprintf(cfg, sizeof(cfg), "Conf: %s", ei.config);
+        d.drawString(cfg, 4, HDR_H + 52);
+        char gp[48]; snprintf(gp, sizeof(gp), "Group %d  Period %d", ei.group, ei.period);
+        d.drawString(gp, 4, HDR_H + 64);
+        d.setTextColor(C_ACC2, C_BG);
+        d.drawString(cls, 4, HDR_H + 76);
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y') ||
                 M5Cardputer.Keyboard.isKeyPressed('Y')) {
                 G.ans = ATOMIC_W[z]; G.ansComplex = false;
@@ -3725,7 +4456,8 @@ cleanup:
         char** labels = (char**)malloc(n * sizeof(char*));
         for (int i = 0; i < n; i++) {
             Constant c; memcpy_P(&c, &constDB[hits[i]], sizeof(Constant));
-            labels[i] = (char*)malloc(40);
+            labels[i] = (char*)malloc(40); if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
+            if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
             snprintf(labels[i], 40, "%s: %s", c.sym, c.name);
         }
         const char** clabels = (const char**)labels;
@@ -3740,10 +4472,1021 @@ cleanup:
     }
 };
 
+Quantity SciRef::dParseExpr(const char*& p, bool& err) {
+    Quantity a = dParseTerm(p, err);
+    while (!err) {
+        dSkip(p);
+        if (*p == '+') {
+            p++;
+            Quantity b = dParseTerm(p, err);
+            if (err) return a;
+            if (a.dim != b.dim) { err = true; return a; }
+            a.v += b.v;
+        } else if (*p == '-') {
+            p++;
+            Quantity b = dParseTerm(p, err);
+            if (err) return a;
+            if (a.dim != b.dim) { err = true; return a; }
+            a.v -= b.v;
+        } else break;
+    }
+    return a;
+}
+
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 10 / 20 ─ Calculator モード コア部                              ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
+class CasCommands {
+public:
+    static bool eqIC(const char* a, const char* b) {
+        while (*a && *b) { if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return false; a++; b++; }
+        return *a == 0 && *b == 0;
+    }
 
+    bool run(const char* cmd, const char* arg, char* out, int outLen) {
+        if (eqIC(cmd, "Factor"))         return doFactorRational(arg, out, outLen);
+        if (eqIC(cmd, "Expand"))         return doExpand(arg, out, outLen);
+        if (eqIC(cmd, "completeSquare")) return doCompleteSquare(arg, out, outLen);
+        if (eqIC(cmd, "Derivative"))     return doDerivative(arg, out, outLen);
+        if (eqIC(cmd, "cFactor"))        return doCFactor(arg, out, outLen);
+        if (eqIC(cmd, "tExpand"))        return doTExpand(arg, out, outLen);
+        if (eqIC(cmd, "tCollect"))       return doTCollect(arg, out, outLen);
+        if (eqIC(cmd, "getNum"))         return doGetNum(arg, out, outLen);
+        if (eqIC(cmd, "getDenom"))       return doGetDenom(arg, out, outLen);
+        if (eqIC(cmd, "propFrac"))       return doPropFrac(arg, out, outLen);
+        if (eqIC(cmd, "comDenom"))       return doComDenom(arg, out, outLen);
+        if (eqIC(cmd, "Left"))           return doLeft(arg, out, outLen);
+        if (eqIC(cmd, "Right"))          return doRight(arg, out, outLen);
+        if (eqIC(cmd, "cSolve"))         return doCSolve(arg, out, outLen);
+        if (eqIC(cmd, "cZeros"))         return doCSolve(arg, out, outLen);
+        if (eqIC(cmd, "toLn"))           return doToLn(arg, out, outLen);
+        if (eqIC(cmd, "toExp"))          return doToExp(arg, out, outLen);
+        if (eqIC(cmd, "toSin"))          return doToSin(arg, out, outLen);
+        if (eqIC(cmd, "toCos"))          return doToCos(arg, out, outLen);
+        if (eqIC(cmd, "toLogbase"))      return doToLogbase(arg, out, outLen);
+        if (eqIC(cmd, "deSolve"))        return doDeSolve(arg, out, outLen);
+        if (eqIC(cmd, "deSolve2"))       return doDeSolve2(arg, out, outLen);
+        if (eqIC(cmd, "RK4"))            return doRK4(arg, out, outLen);
+        if (eqIC(cmd, "ImpDiff"))        return doImpDiff(arg, out, outLen);
+        if (eqIC(cmd, "implicitDiff"))   return doImpDiff(arg, out, outLen);
+        if (eqIC(cmd, "Taylor"))         return doTaylor(arg, out, outLen);
+        if (eqIC(cmd, "Tangent"))        return doTangent(arg, out, outLen);
+        if (eqIC(cmd, "Normal"))         return doNormal(arg, out, outLen);
+        if (eqIC(cmd, "ArcLength"))      return doArcLength(arg, out, outLen);
+        if (eqIC(cmd, "fMin"))           return doFMin(arg, out, outLen);
+        if (eqIC(cmd, "fMax"))           return doFMax(arg, out, outLen);
+        if (eqIC(cmd, "DiffQ"))          return doDiffQ(arg, out, outLen);
+        if (eqIC(cmd, "Series"))         return doSeries(arg, out, outLen);
+        if (eqIC(cmd, "LeadingTerm"))    return doLeadingTerm(arg, out, outLen);
+        return false;
+    }
+private:
+    bool parsePoly(const char* s, Polynomial& p) {
+        for (int i = 0; i <= POLY_MAX; i++) p.c[i] = 0;
+        const char* q = s;
+        int sign = 1;
+        while (*q == ' ') q++;
+        if (*q == '+') q++;
+        else if (*q == '-') { sign = -1; q++; }
+        while (*q) {
+            while (*q == ' ') q++;
+            if (!*q) break;
+            double coef = 1.0;
+            bool sawCoef = false;
+            if (isdigit((unsigned char)*q) || *q == '.') {
+                char* end; coef = strtod(q, &end); q = end; sawCoef = true;
+            }
+            int power = 0;
+            if (*q == 'x' || *q == 'X') {
+                q++; power = 1;
+                if (*q == '^') {
+                    q++;
+                    char* end; long e = strtol(q, &end, 10);
+                    if (end == q) return false;
+                    q = end; power = (int)e;
+                }
+            } else {
+                if (!sawCoef) return false;
+                power = 0;
+            }
+            if (power < 0 || power > POLY_MAX) return false;
+            p.c[power] += sign * coef;
+            while (*q == ' ') q++;
+            if (*q == '+') { sign = 1; q++; }
+            else if (*q == '-') { sign = -1; q++; }
+            else if (*q == 0) break;
+            else return false;
+        }
+        p.normalize();
+        return true;
+    }
+
+        bool doExpand(const char* s, char* out, int outLen) {
+        int len = strlen(s);
+        int i = 0; while (i < len && s[i]==' ') i++;
+        if (i >= len || s[i] != '(') {
+            Polynomial p;
+            if (parsePoly(s, p)) { p.toString(out, outLen); return true; }
+            return false;
+        }
+        Polynomial acc; acc.c[0] = 1; acc.deg = 0;
+        bool any = false;
+        while (i < len) {
+            while (i < len && (s[i]==' ' || s[i]=='*')) i++;
+            if (i >= len) break;
+            if (s[i] != '(') return false;
+            int depth = 0, close = -1;
+            for (int k = i; k < len; k++) {
+                if (s[k]=='(') depth++;
+                else if (s[k]==')') { depth--; if (depth==0) { close = k; break; } }
+            }
+            if (close < 0) return false;
+            char inner[80]; int il = close - i - 1;
+            if (il < 0 || il >= 80) return false;
+            memcpy(inner, s+i+1, il); inner[il] = 0;
+            Polynomial p;
+            if (!parsePoly(inner, p)) return false;
+            int n = 1, j = close + 1;
+            while (j < len && s[j]==' ') j++;
+            if (j < len && s[j]=='^') { j++; n = atoi(s+j); if (n < 0 || n > 8) return false; while (j < len && (isdigit((unsigned char)s[j]) || s[j]==' ')) j++; }
+            for (int k = 0; k < n; k++) acc = acc * p;
+            any = true;
+            i = j;
+        }
+        if (!any) return false;
+        acc.toString(out, outLen);
+        return true;
+    }
+
+    bool doCompleteSquare(const char* s, char* out, int outLen) {
+        Polynomial p;
+        if (!parsePoly(s, p)) return false;
+        if (p.deg != 2) return false;
+        double a = p.c[2], b = p.c[1], c = p.c[0];
+        if (fabs(a) < 1e-15) return false;
+        double pv = -b / (2*a);
+        double qv = c - b*b / (4*a);
+        char buf[120];
+        if (fabs(a-1) < 1e-9) {
+            if (pv >= 0) snprintf(buf, sizeof(buf), "(x-%.6g)^2+%.6g", pv, qv);
+            else         snprintf(buf, sizeof(buf), "(x+%.6g)^2+%.6g", -pv, qv);
+        } else {
+            if (pv >= 0) snprintf(buf, sizeof(buf), "%.6g(x-%.6g)^2+%.6g", a, pv, qv);
+            else         snprintf(buf, sizeof(buf), "%.6g(x+%.6g)^2+%.6g", a, -pv, qv);
+        }
+        strncpy(out, buf, outLen-1); out[outLen-1] = 0;
+        return true;
+    }
+
+    // Patch 2-1 derivative engine
+    static const int DNODE_MAX = 200;
+    struct DNode { char kind; char fn; double val; int a, b; };
+    DNode dn[DNODE_MAX];
+    int dnUsed = 0;
+    const char* dpp = nullptr;
+    char dVar = 'x';
+    bool dErr = false;
+    int dAlloc() { if (dnUsed >= DNODE_MAX) { dErr = true; return -1; } return dnUsed++; }
+    int dNewNum(double v) { int i = dAlloc(); if (i<0) return -1; dn[i].kind='n'; dn[i].fn=0; dn[i].val=v; dn[i].a=dn[i].b=-1; return i; }
+    int dNewVar(char c)   { int i = dAlloc(); if (i<0) return -1; dn[i].kind='v'; dn[i].fn=c; dn[i].val=0; dn[i].a=dn[i].b=-1; return i; }
+    int dNewOp(char k, int a, int b) { int i = dAlloc(); if (i<0) return -1; dn[i].kind=k; dn[i].fn=0; dn[i].val=0; dn[i].a=a; dn[i].b=b; return i; }
+    int dNewFn(char fn, int a) { int i = dAlloc(); if (i<0) return -1; dn[i].kind='f'; dn[i].fn=fn; dn[i].val=0; dn[i].a=a; dn[i].b=-1; return i; }
+    void dSkip() { while (*dpp == ' ' || *dpp == '\t') dpp++; }
+    int dParseExpr();
+    int dParseAtom() {
+        dSkip();
+        if (!*dpp) { dErr = true; return -1; }
+        if (*dpp == '(') { dpp++; int e = dParseExpr(); dSkip(); if (*dpp == ')') dpp++; else dErr = true; return e; }
+        if (isdigit((unsigned char)*dpp) || *dpp == '.') { char* end; double v = strtod(dpp, &end); dpp = end; return dNewNum(v); }
+        if (isalpha((unsigned char)*dpp)) {
+            char nm[12]; int nn = 0;
+            while (isalnum((unsigned char)*dpp) && nn < 11) nm[nn++] = *dpp++;
+            nm[nn] = 0; dSkip();
+            if (*dpp == '(') {
+                dpp++; int arg = dParseExpr(); dSkip(); if (*dpp == ')') dpp++; else dErr = true;
+                char fn = 0;
+                if      (!strcasecmp(nm, "sin"))  fn = 's';
+                else if (!strcasecmp(nm, "cos"))  fn = 'c';
+                else if (!strcasecmp(nm, "tan"))  fn = 't';
+                else if (!strcasecmp(nm, "exp"))  fn = 'e';
+                else if (!strcasecmp(nm, "ln"))   fn = 'l';
+                else if (!strcasecmp(nm, "sqrt")) fn = 'q';
+                else { dErr = true; return -1; }
+                return dNewFn(fn, arg);
+            }
+            if (nn == 1) { char ch = nm[0]; if ((ch == 'e' || ch == 'E') && ch != dVar) return dNewNum(M_E); return dNewVar(ch); }
+            if (!strcasecmp(nm, "pi")) return dNewNum(M_PI);
+            dErr = true; return -1;
+        }
+        dErr = true; return -1;
+    }
+
+    int dParseUnary() {
+        dSkip();
+        if (*dpp == '-') { dpp++; int e = dParseUnary(); return dNewOp('N', e, -1); }
+        if (*dpp == '+') { dpp++; return dParseUnary(); }
+        return dParseAtom();
+    }
+
+    int dParsePow() {
+        int base = dParseUnary(); dSkip();
+        if (*dpp == '^') { dpp++; int ex = dParsePow(); return dNewOp('^', base, ex); }
+        return base;
+    }
+
+    int dParseTerm() {
+        int left = dParsePow();
+        while (true) { dSkip();
+            if      (*dpp == '*') { dpp++; int r = dParsePow(); left = dNewOp('*', left, r); }
+            else if (*dpp == '/') { dpp++; int r = dParsePow(); left = dNewOp('/', left, r); }
+            else break;
+        }
+        return left;
+    }
+
+    int dDiff(int n) {
+        if (n < 0 || dErr) return -1;
+        static int dDepth = 0;
+        if (dDepth > 120) { dErr = true; return -1; }
+        struct DG { int* p; DG(int* q):p(q){++(*p);} ~DG(){--(*p);} };
+        DG _g(&dDepth);
+        DNode& N = dn[n];
+        switch (N.kind) {
+            case 'n': return dNewNum(0);
+            case 'v': return dNewNum(N.fn == dVar ? 1 : 0);
+            case 'N': return dNewOp('N', dDiff(N.a), -1);
+            case '+': case '-': return dNewOp(N.kind, dDiff(N.a), dDiff(N.b));
+            case '*': {
+                int fp = dDiff(N.a), gp = dDiff(N.b);
+                int t1 = dNewOp('*', fp, N.b);
+                int t2 = dNewOp('*', N.a, gp);
+                return dNewOp('+', t1, t2);
+            }
+            case '/': {
+                int fp = dDiff(N.a), gp = dDiff(N.b);
+                int t1 = dNewOp('*', fp, N.b);
+                int t2 = dNewOp('*', N.a, gp);
+                int nm = dNewOp('-', t1, t2);
+                int dn2 = dNewOp('^', N.b, dNewNum(2));
+                return dNewOp('/', nm, dn2);
+            }
+            case '^': {
+                if (dn[N.b].kind == 'n') {
+                    double nv = dn[N.b].val;
+                    int fp = dDiff(N.a);
+                    int t1 = dNewOp('*', dNewNum(nv), dNewOp('^', N.a, dNewNum(nv - 1)));
+                    return dNewOp('*', t1, fp);
+                }
+                dErr = true; return -1;
+            }
+            case 'f': {
+                int arg = N.a, argp = dDiff(arg);
+                switch (N.fn) {
+                    case 's': return dNewOp('*', dNewFn('c', arg), argp);
+                    case 'c': return dNewOp('*', dNewOp('N', dNewFn('s', arg), -1), argp);
+                    case 't': { int c = dNewFn('c', arg); return dNewOp('/', argp, dNewOp('^', c, dNewNum(2))); }
+                    case 'e': return dNewOp('*', dNewFn('e', arg), argp);
+                    case 'l': return dNewOp('/', argp, arg);
+                    case 'q': return dNewOp('/', argp, dNewOp('*', dNewNum(2), dNewFn('q', arg)));
+                }
+                dErr = true; return -1;
+            }
+        }
+        dErr = true; return -1;
+    }
+
+    int dSimplify(int n) {
+        if (n < 0) return n;
+        static int sDepth = 0;
+        if (sDepth > 200) return -1;
+        sDepth++;
+        DNode& N = dn[n];
+        switch (N.kind) {
+            case 'n': case 'v': { sDepth--; return n; }
+            case 'N': { int a = dSimplify(N.a); if (a < 0) { sDepth--; return -1; } if (dn[a].kind == 'n') { sDepth--; return dNewNum(-dn[a].val); } { int rv = dNewOp('N', a, -1); sDepth--; return rv; } }
+            case '+': {
+                int a = dSimplify(N.a), b = dSimplify(N.b);
+                if (a < 0 || b < 0) { sDepth--; return -1; }
+                if (dn[a].kind=='n' && dn[a].val==0) { sDepth--; return b; }
+                if (dn[b].kind=='n' && dn[b].val==0) { sDepth--; return a; }
+                if (dn[a].kind=='n' && dn[b].kind=='n') { sDepth--; return dNewNum(dn[a].val + dn[b].val); }
+                { int rv = dNewOp('+', a, b); sDepth--; return rv; }
+            }
+            case '-': {
+                int a = dSimplify(N.a), b = dSimplify(N.b);
+                if (a < 0 || b < 0) { sDepth--; return -1; }
+                if (dn[b].kind=='N') { int rv = dNewOp('+', a, dn[b].a); sDepth--; return rv; }
+                if (dn[b].kind=='n' && dn[b].val==0) { sDepth--; return a; }
+                if (dn[a].kind=='n' && dn[a].val==0) { int rv = dNewOp('N', b, -1); sDepth--; return rv; }
+                if (dn[a].kind=='n' && dn[b].kind=='n') { sDepth--; return dNewNum(dn[a].val - dn[b].val); }
+                { int rv = dNewOp('-', a, b); sDepth--; return rv; }
+            }
+            case '*': {
+                int a = dSimplify(N.a), b = dSimplify(N.b);
+                if (a < 0 || b < 0) { sDepth--; return -1; }
+                if ((dn[a].kind=='n' && dn[a].val==0) || (dn[b].kind=='n' && dn[b].val==0)) { sDepth--; return dNewNum(0); }
+                if (dn[a].kind=='n' && dn[a].val==1) { sDepth--; return b; }
+                if (dn[b].kind=='n' && dn[b].val==1) { sDepth--; return a; }
+                if (dn[a].kind=='n' && dn[b].kind=='n') { sDepth--; return dNewNum(dn[a].val * dn[b].val); }
+                { int rv = dNewOp('*', a, b); sDepth--; return rv; }
+            }
+            case '/': {
+                int a = dSimplify(N.a), b = dSimplify(N.b);
+                if (a < 0 || b < 0) { sDepth--; return -1; }
+                if (dn[a].kind=='n' && dn[a].val==0) { sDepth--; return dNewNum(0); }
+                if (dn[b].kind=='n' && dn[b].val==1) { sDepth--; return a; }
+                if (dn[a].kind=='n' && dn[b].kind=='n' && dn[b].val!=0) { sDepth--; return dNewNum(dn[a].val / dn[b].val); }
+                { int rv = dNewOp('/', a, b); sDepth--; return rv; }
+            }
+            case '^': {
+                int a = dSimplify(N.a), b = dSimplify(N.b);
+                if (a < 0 || b < 0) { sDepth--; return -1; }
+                if (dn[b].kind=='n' && dn[b].val==0) { sDepth--; return dNewNum(1); }
+                if (dn[b].kind=='n' && dn[b].val==1) { sDepth--; return a; }
+                if (dn[a].kind=='n' && dn[b].kind=='n') { sDepth--; return dNewNum(pow(dn[a].val, dn[b].val)); }
+                { int rv = dNewOp('^', a, b); sDepth--; return rv; }
+            }
+            case 'f': { int a = dSimplify(N.a); if (a < 0) { sDepth--; return -1; } int rv = dNewFn(N.fn, a); sDepth--; return rv; }
+        }
+        sDepth--;
+        return n;
+    }
+
+    void dPrint(int n, char* out, int outLen, int& pos, int parentPrec) {
+        if (n < 0 || pos >= outLen - 1) return;
+        DNode& N = dn[n];
+        int prec;
+        switch (N.kind) {
+            case '+': case '-': prec = 1; break;
+            case '*': case '/': prec = 2; break;
+            case 'N':           prec = 3; break;
+            case '^':           prec = 4; break;
+            case 'f':           prec = 5; break;
+            default:            prec = 6; break;
+        }
+        bool needParen = (prec < parentPrec);
+        if (needParen && pos < outLen - 1) out[pos++] = '(';
+        switch (N.kind) {
+            case 'n': {
+                double v = N.val; char b[24];
+                if (v == (long long)v && fabs(v) < 1e15) snprintf(b, sizeof(b), "%lld", (long long)v);
+                else snprintf(b, sizeof(b), "%g", v);
+                for (int i = 0; b[i] && pos < outLen - 1; i++) out[pos++] = b[i];
+            } break;
+            case 'v': if (pos < outLen - 1) out[pos++] = N.fn; break;
+            case 'N': if (pos < outLen - 1) out[pos++] = '-'; dPrint(N.a, out, outLen, pos, prec); break;
+            case '+': case '-': case '*': case '/': case '^': {
+                int lp = (N.kind == '^') ? (prec + 1) : prec;
+                dPrint(N.a, out, outLen, pos, lp);
+                if (pos < outLen - 1) out[pos++] = N.kind;
+                int rp = (N.kind == '^') ? prec : (prec + 1);
+                dPrint(N.b, out, outLen, pos, rp);
+            } break;
+            case 'f': {
+                const char* fname = "?(";
+                switch (N.fn) {
+                    case 's': fname = "sin(";  break;
+                    case 'c': fname = "cos(";  break;
+                    case 't': fname = "tan(";  break;
+                    case 'e': fname = "exp(";  break;
+                    case 'l': fname = "ln(";   break;
+                    case 'q': fname = "sqrt("; break;
+                }
+                for (int i = 0; fname[i] && pos < outLen - 1; i++) out[pos++] = fname[i];
+                dPrint(N.a, out, outLen, pos, 0);
+                if (pos < outLen - 1) out[pos++] = ')';
+            } break;
+        }
+        if (needParen && pos < outLen - 1) out[pos++] = ')';
+    }
+
+    bool doDerivativeImpl(const char* expr, char var, char* out, int outLen) {
+        Polynomial p;
+        if (parsePoly(expr, p)) { Polynomial d = p.diff(); d.toString(out, outLen); return true; }
+        dnUsed = 0; dErr = false; dVar = var; dpp = expr;
+        int root = dParseExpr();
+        dSkip();
+        if (dErr || *dpp != 0 || root < 0) return false;
+        int d = dDiff(root);
+        if (dErr || d < 0) return false;
+        d = dSimplify(d);
+        if (dErr || d < 0) return false;
+        int pos = 0;
+        dPrint(d, out, outLen, pos, 0);
+        out[pos] = 0;
+        return true;
+    }
+
+    bool doDerivative(const char* s, char* out, int outLen) {
+        int len = strlen(s), depth = 0, cp = -1;
+        for (int i = 0; i < len; i++) {
+            char c = s[i];
+            if      (c == '(') depth++;
+            else if (c == ')') depth--;
+            else if (c == ',' && depth == 0) cp = i;
+        }
+        if (cp < 0) return false;
+        int es = 0; while (es < cp && s[es] == ' ') es++;
+        int ee = cp; while (ee > es && s[ee-1] == ' ') ee--;
+        int elen = ee - es;
+        if (elen <= 0 || elen >= 80) return false;
+        char expr[80]; memcpy(expr, s + es, elen); expr[elen] = 0;
+        int vs = cp + 1; while (vs < len && s[vs] == ' ') vs++;
+        int ve = len; while (ve > vs && s[ve-1] == ' ') ve--;
+        if (ve - vs != 1) return false;
+        return doDerivativeImpl(expr, s[vs], out, outLen);
+    }
+
+    bool doCFactor(const char* s, char* out, int outLen) {
+        Polynomial p; if (!parsePoly(s, p)) return false;
+        if (p.deg < 2) { p.toString(out, outLen); return true; }
+        Complex roots[16];
+        int n = NumAnalysis::polyRoots(p.c, p.deg, roots);
+        char buf[200]; int bp = 0;
+        double leading = p.c[p.deg];
+        if (fabs(leading - 1) > 1e-9 && bp < (int)sizeof(buf)-20) bp += snprintf(buf+bp, sizeof(buf)-bp, "%.4g", leading);
+        for (int i = 0; i < n && bp < (int)sizeof(buf)-40; i++) {
+            char t2[48];
+            if (fabs(roots[i].im) < 1e-6) {
+                double r = roots[i].re;
+                snprintf(t2, sizeof(t2), r>=0 ? "(x-%.4g)" : "(x+%.4g)", fabs(r));
+            } else {
+                snprintf(t2, sizeof(t2), "(x-(%.4g%+.4gi))", roots[i].re, roots[i].im);
+            }
+            bp += snprintf(buf+bp, sizeof(buf)-bp, "%s", t2);
+        }
+        strncpy(out, buf, outLen-1); out[outLen-1]=0;
+        return true;
+    }
+
+    bool doFactorRational(const char* s, char* out, int outLen) {
+        Polynomial p; if (!parsePoly(s, p)) return false;
+        if (p.deg < 2) { p.toString(out, outLen); return true; }
+        long long lcm = 1;
+        for (int i = 0; i <= p.deg; i++) { Fraction f = Fraction::fromDouble(p.c[i], 1e-9, 100000LL); lcm = dfL(lcm, f.den); if (lcm > 10000000LL) { lcm = 1; break; } }
+        double cc[POLY_MAX+1]; int rd = p.deg;
+        for (int i = 0; i <= rd; i++) { Fraction f = Fraction::fromDouble(p.c[i], 1e-9, 100000LL); cc[i] = (double)(f.num * (lcm / f.den)); }
+        char fac[12][40]; int nf = 0;
+        while (rd >= 1 && nf < 10) {
+            if (fabs(cc[0]) < 1e-9) { snprintf(fac[nf++],40,"x"); for (int k=1;k<=rd;k++) cc[k-1]=cc[k]; rd--; continue; }
+            long long pd[64], qd[64];
+            int np = dfDiv((long long)round(fabs(cc[0])), pd, 64);
+            int nq = dfDiv((long long)round(fabs(cc[rd])), qd, 64);
+            if (!np || !nq) break;
+            bool found = false;
+            for (int i = 0; i < np && !found; i++)
+                for (int j = 0; j < nq && !found; j++)
+                    for (int sg = -1; sg <= 1 && !found; sg += 2) {
+                        double r = sg * (double)pd[i] / qd[j];
+                        double rm[POLY_MAX+1]; rm[0] = cc[rd];
+                        for (int k = 1; k <= rd; k++) rm[k] = cc[rd-k] + rm[k-1]*r;
+                        if (fabs(rm[rd]) < 1e-6) {
+                            snprintf(fac[nf++], 40, r>=0 ? "(x-%.4g)" : "(x+%.4g)", fabs(r));
+                            for (int k = 0; k < rd; k++) cc[k] = rm[rd-1-k];
+                            rd--; found = true;
+                        }
+                    }
+            if (!found) break;
+        }
+        char buf[200]; int bp = 0;
+        double leading = p.c[p.deg];
+        if (fabs(leading - 1) > 1e-9 && bp < (int)sizeof(buf)-20) bp += snprintf(buf+bp, sizeof(buf)-bp, "%.4g", leading);
+        for (int i = 0; i < nf && bp < (int)sizeof(buf)-40; i++) bp += snprintf(buf+bp, sizeof(buf)-bp, "%s", fac[i]);
+        if (rd > 0 && bp < (int)sizeof(buf)-90) { Polynomial rp; for (int i=0;i<=rd;i++) rp.c[i]=cc[i]; rp.normalize(); char rt[80]; rp.toString(rt,sizeof(rt)); bp += snprintf(buf+bp, sizeof(buf)-bp, "(%s)", rt); }
+        if (bp == 0) snprintf(buf, sizeof(buf), "1");
+        strncpy(out, buf, outLen-1); out[outLen-1]=0;
+        return true;
+    }
+
+    static long long dfG(long long a, long long b) { if(a<0)a=-a; if(b<0)b=-b; while(b){long long t=a%b;a=b;b=t;} return a?a:1; }
+    static long long dfL(long long a, long long b) { return a/dfG(a,b)*b; }
+    static int dfDiv(long long n, long long* out, int max) {
+        if (n < 0) n = -n;
+        if (n == 0) return 0;
+        int c = 0;
+        for (long long d = 1; d*d <= n && c < max; d++)
+            if (n % d == 0) { out[c++]=d; if (d*d != n && c < max) out[c++]=n/d; }
+        return c;
+    }
+
+    bool doTExpand(const char* s, char* out, int outLen) {
+        int len = strlen(s), i = 0;
+        while (i < len && s[i]==' ') i++;
+        char fk = 0;
+        if (i+3 <= len && !strncasecmp(s+i,"sin",3)) { fk='s'; i+=3; }
+        else if (i+3 <= len && !strncasecmp(s+i,"cos",3)) { fk='c'; i+=3; }
+        else return false;
+        while (i < len && s[i]==' ') i++;
+        if (i >= len || s[i] != '(') return false;
+        int start = i+1, depth = 1, close = -1;
+        for (int k = start; k < len; k++) {
+            if (s[k]=='(') depth++;
+            else if (s[k]==')') { depth--; if (depth==0) { close = k; break; } }
+        }
+        if (close < 0) return false;
+        int op = -1, d2 = 0;
+        for (int k = start; k < close; k++) {
+            if (s[k]=='(') d2++;
+            else if (s[k]==')') d2--;
+            else if ((s[k]=='+'||s[k]=='-') && d2==0 && k>start) { op = k; break; }
+        }
+        if (op < 0) return false;
+        char A[40], B[40]; int al=op-start, bl=close-op-1;
+        if (al<=0 || al>=40 || bl<=0 || bl>=40) return false;
+        memcpy(A, s+start, al); A[al]=0;
+        memcpy(B, s+op+1, bl); B[bl]=0;
+        char *Ap=A, *Bp=B;
+        while(*Ap==' ')Ap++;
+        while(*Bp==' ')Bp++;
+        char sg = s[op];
+        if (fk=='s') {
+            if (sg=='+') snprintf(out,outLen,"sin(%s)*cos(%s)+cos(%s)*sin(%s)",Ap,Bp,Ap,Bp);
+            else         snprintf(out,outLen,"sin(%s)*cos(%s)-cos(%s)*sin(%s)",Ap,Bp,Ap,Bp);
+        } else {
+            if (sg=='+') snprintf(out,outLen,"cos(%s)*cos(%s)-sin(%s)*sin(%s)",Ap,Bp,Ap,Bp);
+            else         snprintf(out,outLen,"cos(%s)*cos(%s)+sin(%s)*sin(%s)",Ap,Bp,Ap,Bp);
+        }
+        return true;
+    }
+
+    bool doTCollect(const char* s, char* out, int outLen) {
+        int len = strlen(s), a = 0, b = len;
+        while (a < len && s[a]==' ') a++;
+        while (b > a && s[b-1]==' ') b--;
+        auto ext = [&](int pos, char* fnO, char* argO, int& aL, int& eP) -> bool {
+            int i = 0;
+            if (pos+i+3 > b) return false;
+            if (!strncasecmp(s+pos+i,"sin",3)) strcpy(fnO,"sin");
+            else if (!strncasecmp(s+pos+i,"cos",3)) strcpy(fnO,"cos");
+            else return false;
+            i += 3;
+            while (pos+i < b && s[pos+i]==' ') i++;
+            if (s[pos+i] != '(') return false;
+            int st = pos+i+1, dp = 1, cl = -1;
+            for (int k = st; k < b; k++) {
+                if (s[k]=='(') dp++;
+                else if (s[k]==')') { dp--; if (dp==0) { cl=k; break; } }
+            }
+            if (cl < 0) return false;
+            aL = cl - st;
+            if (aL<=0 || aL>=40) return false;
+            memcpy(argO, s+st, aL); argO[aL]=0;
+            eP = cl+1;
+            return true;
+        };
+        char fn[4]={0}, arg[40]; int aL=0, eP=0;
+        if (!ext(a, fn, arg, aL, eP)) return false;
+        int p2 = a + eP;
+        while (p2 < b && s[p2]==' ') p2++;
+        if (p2+1 < b && s[p2]=='^' && s[p2+1]=='2') {
+            if (!strcmp(fn,"sin")) snprintf(out,outLen,"(1-cos(2*%s))/2",arg);
+            else                   snprintf(out,outLen,"(1+cos(2*%s))/2",arg);
+            return true;
+        }
+        if (p2 < b && s[p2]=='*') {
+            p2++;
+            while (p2 < b && s[p2]==' ') p2++;
+            char fn2[4]={0}, arg2[40]; int aL2=0, eP2=0;
+            if (!ext(p2, fn2, arg2, aL2, eP2)) return false;
+            if (strcmp(arg,arg2)!=0) return false;
+            if ((!strcmp(fn,"sin")&&!strcmp(fn2,"cos")) || (!strcmp(fn,"cos")&&!strcmp(fn2,"sin"))) {
+                snprintf(out,outLen,"sin(2*%s)/2",arg);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static bool dpSplit(const char* s, char* num, int numLen, char* den, int denLen) {
+        int len = strlen(s), i = 0, depth = 0;
+        while (i < len && s[i]==' ') i++;
+        int slash = -1;
+        for (int k = i; k < len; k++) {
+            char c = s[k];
+            if (c=='(') depth++;
+            else if (c==')') depth--;
+            else if (c=='/' && depth==0) { slash = k; break; }
+        }
+        if (slash < 0) {
+            int n = len - i;
+            if (n <= 0 || n >= numLen) return false;
+            memcpy(num, s+i, n); num[n]=0;
+            if (denLen < 2) return false;
+            strcpy(den, "1");
+            return true;
+        }
+        int a = slash - i;
+        if (a <= 0 || a >= numLen) return false;
+        memcpy(num, s+i, a); num[a]=0;
+        int j = slash + 1;
+        while (j < len && s[j]==' ') j++;
+        int b2 = len - j;
+        if (b2 <= 0 || b2 >= denLen) return false;
+        memcpy(den, s+j, b2); den[b2]=0;
+        return true;
+    }
+
+    static bool dpDivPoly(const Polynomial& P, const Polynomial& Q, Polynomial& quot, Polynomial& rem) {
+        quot = Polynomial(); rem = P;
+        if (Q.deg == 0) {
+            if (fabs(Q.c[0]) < 1e-15) return false;
+            for (int i = 0; i <= P.deg; i++) quot.c[i] = P.c[i] / Q.c[0];
+            quot.normalize();
+            rem = Polynomial();
+            return true;
+        }
+        int guard = 0;
+        while (rem.deg >= Q.deg && rem.deg >= 1 && guard < POLY_MAX * 2) {
+            int shift = rem.deg - Q.deg;
+            double coef = rem.c[rem.deg] / Q.c[Q.deg];
+            quot.c[shift] += coef;
+            for (int k = 0; k <= Q.deg; k++) rem.c[k + shift] -= coef * Q.c[k];
+            rem.normalize();
+            guard++;
+        }
+        quot.normalize();
+        return true;
+    }
+
+    bool doGetNum(const char* s, char* out, int outLen) {
+        char nb[80], db[40];
+        if (!dpSplit(s, nb, 80, db, 40)) return false;
+        strncpy(out, nb, outLen-1); out[outLen-1]=0;
+        return true;
+    }
+
+    bool doGetDenom(const char* s, char* out, int outLen) {
+        char nb[80], db[40];
+        if (!dpSplit(s, nb, 80, db, 40)) return false;
+        Polynomial p;
+        if (parsePoly(db, p)) { p.toString(out, outLen); return true; }
+        strncpy(out, db, outLen-1); out[outLen-1]=0;
+        return true;
+    }
+
+    bool doPropFrac(const char* s, char* out, int outLen) {
+        char nb[80], db[40];
+        if (!dpSplit(s, nb, 80, db, 40)) return false;
+        Polynomial P, Q;
+        if (!parsePoly(nb, P) || !parsePoly(db, Q)) return false;
+        if (Q.deg == 0) { P.toString(out, outLen); return true; }
+        Polynomial quot, rem;
+        if (!dpDivPoly(P, Q, quot, rem)) return false;
+        char qs[80]="0", rs[80]="0", ds[80]="0";
+        quot.toString(qs, sizeof(qs));
+        rem.toString(rs, sizeof(rs));
+        Q.toString(ds, sizeof(ds));
+        if (rem.deg == 0 && fabs(rem.c[0]) < 1e-12) {
+            strncpy(out, qs, outLen-1); out[outLen-1]=0;
+        } else if (quot.deg == 0 && fabs(quot.c[0]) < 1e-12) {
+            snprintf(out, outLen, "(%s)/%s", rs, ds);
+        } else {
+            snprintf(out, outLen, "%s + (%s)/%s", qs, rs, ds);
+        }
+        return true;
+    }
+
+    bool doComDenom(const char* s, char* out, int outLen) {
+        Polynomial nums[4], dens[4]; int signs[4]; int nt = 0;
+        int len = strlen(s), i = 0, sgn = 1;
+        while (i < len && s[i]==' ') i++;
+        if (i < len && (s[i]=='+' || s[i]=='-')) { if (s[i]=='-') sgn=-1; i++; }
+        while (i < len && nt < 4) {
+            int start = i, d2 = 0;
+            while (i < len) {
+                char c = s[i];
+                if (c=='(') d2++;
+                else if (c==')') d2--;
+                else if ((c=='+'||c=='-') && d2==0) break;
+                i++;
+            }
+            int al = i - start;
+            while (al > 0 && s[start+al-1]==' ') al--;
+            if (al <= 0 || al >= 80) return false;
+            char tb[80]; memcpy(tb, s+start, al); tb[al]=0;
+            char nb[60], db[40];
+            if (!dpSplit(tb, nb, 60, db, 40)) return false;
+            if (!parsePoly(nb, nums[nt]) || !parsePoly(db, dens[nt])) return false;
+            signs[nt] = sgn; nt++;
+            if (i >= len) break;
+            sgn = (s[i]=='+') ? 1 : -1;
+            i++;
+            while (i < len && s[i]==' ') i++;
+        }
+        if (nt == 0) return false;
+        if (nt >= 4 && i < len) return false;
+        Polynomial cden; cden.c[0] = 1;
+        for (int m = 0; m < nt; m++) cden = cden * dens[m];
+        Polynomial cnum;
+        for (int m = 0; m < nt; m++) {
+            Polynomial tm = nums[m];
+            for (int k = 0; k < nt; k++) if (k != m) tm = tm * dens[k];
+            if (signs[m] < 0) for (int k = 0; k <= POLY_MAX; k++) tm.c[k] = -tm.c[k];
+            cnum = cnum + tm;
+        }
+        cnum.normalize();
+        char ns[80], ds[80];
+        cnum.toString(ns, sizeof(ns));
+        cden.toString(ds, sizeof(ds));
+        if (cden.deg == 0 && fabs(cden.c[0] - 1.0) < 1e-12) {
+            strncpy(out, ns, outLen-1); out[outLen-1]=0;
+        } else {
+            snprintf(out, outLen, "(%s)/(%s)", ns, ds);
+        }
+        return true;
+    }
+
+    bool doLeft(const char* s, char* out, int outLen) {int L=strlen(s),d=0,eq=-1;for(int i=0;i<L;i++){if(s[i]=='(')d++;else if(s[i]==')')d--;else if(s[i]=='='&&d==0){if(i+1<L&&s[i+1]=='='){i++;continue;}eq=i;break;}}if(eq<0)return false;int en=eq;while(en>0&&s[en-1]==' ')en--;if(en<=0||en>=outLen)return false;memcpy(out,s,en);out[en]=0;return true;}
+    bool doRight(const char* s, char* out, int outLen) {int L=strlen(s),d=0,eq=-1;for(int i=0;i<L;i++){if(s[i]=='(')d++;else if(s[i]==')')d--;else if(s[i]=='='&&d==0){if(i+1<L&&s[i+1]=='='){i++;continue;}eq=i;break;}}if(eq<0)return false;int st=eq+1;while(st<L&&s[st]==' ')st++;int el=L-st;if(el<=0||el>=outLen)return false;memcpy(out,s+st,el);out[el]=0;return true;}
+    bool doCSolve(const char* s, char* out, int outLen) {int L=strlen(s),d=0,eq=-1;for(int i=0;i<L;i++){if(s[i]=='(')d++;else if(s[i]==')')d--;else if(s[i]=='='&&d==0){if(i+1<L&&s[i+1]=='='){i++;continue;}eq=i;break;}}char ex[80];if(eq<0){if(L>=80)return false;strncpy(ex,s,79);ex[79]=0;}else{char lh[40],rh[40];int ll=eq;while(ll>0&&s[ll-1]==' ')ll--;if(ll<=0||ll>=40)return false;memcpy(lh,s,ll);lh[ll]=0;int rs=eq+1;while(rs<L&&s[rs]==' ')rs++;int el=L-rs;if(el<=0||el>=40)return false;memcpy(rh,s+rs,el);rh[el]=0;snprintf(ex,sizeof(ex),"(%s)-(%s)",lh,rh);}Polynomial p;if(!parsePoly(ex,p))return false;if(p.deg<1)return false;Complex roots[16];int n=NumAnalysis::polyRoots(p.c,p.deg,roots);char buf[200];int bp=0;for(int i=0;i<n;i++){char rs[32];roots[i].toString(rs,sizeof(rs));bp+=snprintf(buf+bp,sizeof(buf)-bp,"%sx=%s",i?" ; ":"",rs);}strncpy(out,buf,outLen-1);out[outLen-1]=0;return true;}
+    bool doToLn(const char* s, char* out, int outLen) {int L=strlen(s),d=0,ct=-1;for(int i=0;i<L;i++){if(s[i]=='(')d++;else if(s[i]==')')d--;else if(s[i]=='^'&&d==0){ct=i;break;}}if(ct<=0)return false;char base[20],exp[60];int bl=ct;while(bl>0&&s[bl-1]==' ')bl--;if(bl<=0||bl>=20)return false;memcpy(base,s,bl);base[bl]=0;int es=ct+1;while(es<L&&s[es]==' ')es++;int el=L-es;while(el>0&&s[es+el-1]==' ')el--;if(el<=0||el>=60)return false;memcpy(exp,s+es,el);exp[el]=0;char*e;double bv=strtod(base,&e);if(e==base||*e)return false;snprintf(out,outLen,"e^(%s*ln(%g))",exp,bv);return true;}
+    bool doToExp(const char* s, char* out, int outLen) {int L=strlen(s),i=0;while(i<L&&s[i]==' ')i++;if(i+3<L&&!strncasecmp(s+i,"exp",3)){int p=i+3;while(p<L&&s[p]==' ')p++;if(p<L&&s[p]=='('){int d=1,cl=-1;for(int k=p+1;k<L;k++){if(s[k]=='(')d++;else if(s[k]==')'){d--;if(d==0){cl=k;break;}}}if(cl>0){int il=cl-p-1;if(il>0&&il<60){char in[60];memcpy(in,s+p+1,il);in[il]=0;snprintf(out,outLen,"e^(%s)",in);return true;}}}}return false;}
+    bool doToLogbase(const char* s, char* out, int outLen) {int L=strlen(s),d=0,cp=-1;for(int i=0;i<L;i++){if(s[i]=='(')d++;else if(s[i]==')')d--;else if(s[i]==','&&d==0){cp=i;break;}}if(cp<0)return false;char bb[20],eb[60];int bl=cp;while(bl>0&&s[bl-1]==' ')bl--;if(bl<=0||bl>=20)return false;memcpy(bb,s,bl);bb[bl]=0;int es=cp+1;while(es<L&&s[es]==' ')es++;int el=L-es;while(el>0&&s[es+el-1]==' ')el--;if(el<=0||el>=60)return false;memcpy(eb,s+es,el);eb[el]=0;snprintf(out,outLen,"ln(%s)/ln(%s)",eb,bb);return true;}
+    bool doToSin(const char* s, char* out, int outLen) {int L=strlen(s),i=0;while(i<L&&s[i]==' ')i++;if(i+3>=L||strncasecmp(s+i,"cos",3))return false;int p=i+3;while(p<L&&s[p]==' ')p++;if(p>=L||s[p]!='(')return false;int d=1,cl=-1;for(int k=p+1;k<L;k++){if(s[k]=='(')d++;else if(s[k]==')'){d--;if(d==0){cl=k;break;}}}if(cl<0)return false;int il=cl-p-1;if(il<=0||il>=60)return false;char in[60];memcpy(in,s+p+1,il);in[il]=0;snprintf(out,outLen,"sin(pi/2-(%s))",in);return true;}
+    bool doToCos(const char* s, char* out, int outLen) {int L=strlen(s),i=0;while(i<L&&s[i]==' ')i++;if(i+3>=L||strncasecmp(s+i,"sin",3))return false;int p=i+3;while(p<L&&s[p]==' ')p++;if(p>=L||s[p]!='(')return false;int d=1,cl=-1;for(int k=p+1;k<L;k++){if(s[k]=='(')d++;else if(s[k]==')'){d--;if(d==0){cl=k;break;}}}if(cl<0)return false;int il=cl-p-1;if(il<=0||il>=60)return false;char in[60];memcpy(in,s+p+1,il);in[il]=0;snprintf(out,outLen,"cos(pi/2-(%s))",in);return true;}
+    bool doDeSolve(const char* s, char* out, int outLen) {
+        bool hasX, hasY;
+        dfVarScan(s, hasX, hasY);
+        if (!hasY) {
+            Polynomial p;
+            if (parsePoly(s, p)) {
+                Polynomial I = p.integ();
+                char tmp[80]; I.toString(tmp, sizeof(tmp));
+                snprintf(out, outLen, "y = %s + C", tmp);
+                return true;
+            }
+            return false;
+        }
+        if (!hasX) {
+            char fb[80]; dfReplaceXtoY(s, fb, sizeof(fb));
+            ExprEval::Subst s0 = {'y', 0}, s1 = {'y', 1}, s2 = {'y', 2};
+            auto r0 = gEv.eval(fb, &s0, 1);
+            auto r1 = gEv.eval(fb, &s1, 1);
+            auto r2 = gEv.eval(fb, &s2, 1);
+            if (!r0.ok || !r1.ok || !r2.ok) return false;
+            double a = r1.val - r0.val;
+            double b = r0.val;
+            if (fabs(r2.val - (2*a + b)) > 1e-6) return false;
+            if (fabs(a) < 1e-12 && fabs(b) < 1e-12) { snprintf(out, outLen, "y = C"); return true; }
+            if (fabs(a) < 1e-12) { snprintf(out, outLen, "y = %.4g*x + C", b); return true; }
+            if (fabs(b) < 1e-9) { snprintf(out, outLen, "y = C*e^(%.4g*x)", a); return true; }
+            snprintf(out, outLen, "y = %.4g + C*e^(%.4g*x)", -b/a, a);
+            return true;
+        }
+        if (hasX && hasY) {
+            double xS[3] = {0.3, 1.3, 2.3};
+            double Pv[3], Qv[3];
+            bool lin = true;
+            for (int i = 0; i < 3; i++) {
+                ExprEval::Subst sb[2];
+                sb[0].var = 'x'; sb[0].val = xS[i];
+                sb[1].var = 'y'; sb[1].val = 0;
+                auto r0 = gEv.eval(s, sb, 2);
+                sb[1].val = 1; auto r1 = gEv.eval(s, sb, 2);
+                sb[1].val = 2; auto r2 = gEv.eval(s, sb, 2);
+                if (!r0.ok || !r1.ok || !r2.ok) { lin = false; break; }
+                double d1 = r1.val - r0.val, d2 = r2.val - r1.val;
+                if (fabs(d2 - d1) > 1e-6 * (1 + fabs(d1))) { lin = false; break; }
+                Pv[i] = d1; Qv[i] = r0.val;
+            }
+            if (lin) {
+                bool pC = fabs(Pv[0]-Pv[1]) < 1e-6 && fabs(Pv[1]-Pv[2]) < 1e-6;
+                bool qC = fabs(Qv[0]-Qv[1]) < 1e-6 && fabs(Qv[1]-Qv[2]) < 1e-6;
+                if (pC && qC) {
+                    double p = Pv[0], q = Qv[0];
+                    if (fabs(p) < 1e-12 && fabs(q) < 1e-12) { snprintf(out, outLen, "y = C"); return true; }
+                    if (fabs(p) < 1e-12) { snprintf(out, outLen, "y = %.4g*x + C", q); return true; }
+                    snprintf(out, outLen, "y = %.4g + C*e^(%.4g*x)", -q/p, p);
+                    return true;
+                }
+                if (pC) {
+                    snprintf(out, outLen, "y = C*e^(%.4g*x) + e^(%.4g*x)*int Q(x)*e^(-%.4g*x) dx", Pv[0], Pv[0], Pv[0]);
+                    return true;
+                }
+                snprintf(out, outLen, "y = e^(int P dx)*(C + int Q*e^(-int P dx) dx)");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static void dfVarScan(const char* s, bool& hasX, bool& hasY) {
+        hasX = hasY = false;
+        for (const char* p = s; *p; p++) {
+            bool prevOk = (p == s) || !isalnum((unsigned char)p[-1]);
+            bool nextOk = !isalnum((unsigned char)p[1]);
+            if (prevOk && nextOk) {
+                if (*p == 'x' || *p == 'X') hasX = true;
+                if (*p == 'y' || *p == 'Y') hasY = true;
+            }
+        }
+    }
+
+    static void dfReplaceXtoY(const char* s, char* out, int outLen) {
+        int bi = 0;
+        for (const char* p = s; *p && bi < outLen - 1; p++) {
+            bool prevOk = (p == s) || !isalnum((unsigned char)p[-1]);
+            bool nextOk = !isalnum((unsigned char)p[1]);
+            if (prevOk && nextOk && (*p == 'x' || *p == 'X')) out[bi++] = 'y';
+            else out[bi++] = *p;
+        }
+        out[bi] = 0;
+    }
+
+    bool doRK4(const char* s, char* out, int outLen) {
+        char parts[5][40]; int pi = 0, pj = 0, d = 0;
+        for (int i = 0; s[i] && pi < 5; i++) {
+            char c = s[i];
+            if (c == '(') d++;
+            else if (c == ')') d--;
+            if (c == ',' && d == 0) { parts[pi][pj]=0; pi++; pj=0; continue; }
+            if (pj < 39) parts[pi][pj++] = c;
+        }
+        if (pi < 5) { parts[pi][pj]=0; pi++; }
+        if (pi < 5) return false;
+        double x0 = atof(parts[1]), y0 = atof(parts[2]);
+        double xe = atof(parts[3]), h = atof(parts[4]);
+        if (h <= 0) return false;
+        double rawSteps = ceil((xe - x0) / h);
+        if (rawSteps < 1 || rawSteps > 5000) return false;
+        int steps = (int)rawSteps;
+        double x = x0, y = y0;
+        ExprEval::Subst sb[2] = {{'x',0},{'y',0}};
+        for (int i = 0; i < steps; i++) {
+            sb[0].val = x; sb[1].val = y;
+            auto k1r = gEv.eval(parts[0], sb, 2); if (!k1r.ok) return false; double k1 = k1r.val;
+            sb[0].val = x + h/2; sb[1].val = y + h*k1/2;
+            auto k2r = gEv.eval(parts[0], sb, 2); if (!k2r.ok) return false; double k2 = k2r.val;
+            sb[1].val = y + h*k2/2;
+            auto k3r = gEv.eval(parts[0], sb, 2); if (!k3r.ok) return false; double k3 = k3r.val;
+            sb[0].val = x + h; sb[1].val = y + h*k3;
+            auto k4r = gEv.eval(parts[0], sb, 2); if (!k4r.ok) return false; double k4 = k4r.val;
+            y += h * (k1 + 2*k2 + 2*k3 + k4) / 6.0;
+            x += h;
+            if (isnan(y) || isinf(y)) { snprintf(out, outLen, "diverged at x=%.4g", x); return true; }
+        }
+        snprintf(out, outLen, "y(%.4g) = %.6g  (steps=%d, h=%.4g)", x, y, steps, h);
+        return true;
+    }
+
+    bool doDeSolve2(const char* s, char* out, int outLen) {
+        double ab[2]; int an = 0;
+        const char* p = s; char tmp[24]; int tn = 0;
+        while (*p && an < 2) {
+            if (*p == ',') { tmp[tn]=0; ab[an++] = atof(tmp); tn=0; p++; continue; }
+            if (tn < 23) tmp[tn++] = *p;
+            p++;
+        }
+        if (tn > 0 && an < 2) { tmp[tn]=0; ab[an++] = atof(tmp); }
+        if (an < 2) return false;
+        double A = ab[0], B = ab[1];
+        double D = A*A - 4*B;
+        if (D > 1e-9) {
+            double r1 = (-A + sqrt(D)) / 2, r2 = (-A - sqrt(D)) / 2;
+            snprintf(out, outLen, "y = C1*e^(%.4g*x) + C2*e^(%.4g*x)", r1, r2);
+        } else if (D < -1e-9) {
+            double al = -A / 2, be = sqrt(-D) / 2;
+            snprintf(out, outLen, "y = e^(%.4g*x)*(C1*cos(%.4g*x)+C2*sin(%.4g*x))", al, be, be);
+        } else {
+            double r = -A / 2;
+            snprintf(out, outLen, "y = (C1+C2*x)*e^(%.4g*x)", r);
+        }
+        return true;
+    }
+
+    bool doImpDiff(const char* s, char* out, int outLen) {
+        char fx[100] = "", fy[100] = "";
+        if (!doDerivativeImpl(s, 'x', fx, sizeof(fx))) return false;
+        if (!doDerivativeImpl(s, 'y', fy, sizeof(fy))) return false;
+        char fytr[100]; int bi = 0;
+        while (fy[bi] && bi < 99) { fytr[bi] = fy[bi]; bi++; }
+        fytr[bi] = 0;
+        bool zeroFx = !strcmp(fx, "0");
+        bool zeroFy = !strcmp(fy, "0");
+        if (zeroFy) { snprintf(out, outLen, "dy/dx undefined (Fy=0: vertical tangent)"); return true; }
+        if (zeroFx) { snprintf(out, outLen, "dy/dx = 0  (horizontal tangent)"); return true; }
+        snprintf(out, outLen, "dy/dx = -(%s)/(%s)", fx, fytr);
+        return true;
+    }
+
+    bool doTaylor(const char* s, char* out, int outLen) {
+        char parts[3][64]; int pi = 0, pj = 0, d = 0;
+        for (int i = 0; s[i] && pi < 3; i++) {
+            char c = s[i];
+            if (c == '(') d++;
+            else if (c == ')') d--;
+            if (c == ',' && d == 0) { parts[pi][pj]=0; pi++; pj=0; continue; }
+            if (pj < 63) parts[pi][pj++] = c;
+        }
+        if (pi < 3) { parts[pi][pj]=0; pi++; }
+        if (pi < 3) return false;
+        char expr[80]; int j = 0;
+        for (int i = 0; parts[0][i] && j < 79; i++) if (parts[0][i] != ' ') expr[j++] = parts[0][i];
+        expr[j] = 0;
+        double a = atof(parts[1]);
+        int n = atoi(parts[2]);
+        if (n < 1 || n > 10) return false;
+        char cur[80]; strncpy(cur, expr, 79); cur[79] = 0;
+        double coef[11];
+        for (int k = 0; k <= n; k++) {
+            ExprEval::Subst sx = {'x', a};
+            auto r = gEv.eval(cur, &sx, 1);
+            if (!r.ok) return false;
+            double fact = 1; for (int t = 2; t <= k; t++) fact *= t;
+            coef[k] = r.val / fact;
+            if (k < n) {
+                char next[80];
+                if (!doDerivativeImpl(cur, 'x', next, sizeof(next))) return false;
+                strncpy(cur, next, 79); cur[79] = 0;
+            }
+        }
+        char buf[200]; int bp = 0;
+        bool first = true;
+        for (int k = 0; k <= n && bp < (int)sizeof(buf)-50; k++) {
+            if (fabs(coef[k]) < 1e-9) continue;
+            char term[40]; const char* sg;
+            double v = coef[k];
+            if (first) { sg = (v<0)?"-":""; first = false; }
+            else       { sg = (v<0)?" - ":" + "; }
+            double av = fabs(v);
+            if (k == 0)      snprintf(term, sizeof(term), "%s%.6g", sg, av);
+            else if (k == 1) {
+                if (fabs(a) < 1e-12) snprintf(term, sizeof(term), "%s%.6g*x", sg, av);
+                else if (a > 0)      snprintf(term, sizeof(term), "%s%.6g*(x-%.4g)", sg, av, a);
+                else                 snprintf(term, sizeof(term), "%s%.6g*(x+%.4g)", sg, av, -a);
+            } else {
+                if (fabs(a) < 1e-12) snprintf(term, sizeof(term), "%s%.6g*x^%d", sg, av, k);
+                else if (a > 0)      snprintf(term, sizeof(term), "%s%.6g*(x-%.4g)^%d", sg, av, a, k);
+                else                 snprintf(term, sizeof(term), "%s%.6g*(x+%.4g)^%d", sg, av, -a, k);
+            }
+            bp += snprintf(buf+bp, sizeof(buf)-bp, "%s", term);
+        }
+        if (first) snprintf(buf, sizeof(buf), "0");
+        bp = strlen(buf);
+        if (bp < (int)sizeof(buf) - 20) snprintf(buf+bp, sizeof(buf)-bp, " + O((x-a)^%d)", n+1);
+        strncpy(out, buf, outLen-1); out[outLen-1] = 0;
+        return true;
+    }
+
+    bool doTangent(const char* s, char* out, int outLen) {int L=strlen(s),d=0,cp=-1;for(int i=0;i<L;i++){char c=s[i];if(c=='(')d++;else if(c==')')d--;else if(c==','&&d==0)cp=i;}if(cp<0)return false;int el=cp;while(el>0&&s[el-1]==' ')el--;if(el<=0||el>=80)return false;char expr[80];memcpy(expr,s,el);expr[el]=0;int as=cp+1;while(as<L&&s[as]==' ')as++;int ae=L;while(ae>as&&s[ae-1]==' ')ae--;if(ae-as<1||ae-as>=24)return false;char ab[24];memcpy(ab,s+as,ae-as);ab[ae-as]=0;double a=atof(ab);char fp[80];if(!doDerivativeImpl(expr,'x',fp,sizeof(fp)))return false;ExprEval::Subst sx={'x',a};auto rf=gEv.eval(expr,&sx,1);auto rf1=gEv.eval(fp,&sx,1);if(!rf.ok||!rf1.ok)return false;double m=rf1.val,b=rf.val;double c0=b-m*a;char s0[40],s1[40];snprintf(s0,sizeof(s0),"%.6g",m);snprintf(s1,sizeof(s1),"%.6g",c0);if(fabs(m)<1e-12)snprintf(out,outLen,"y = %s",s1);else if(fabs(c0)<1e-12)snprintf(out,outLen,"y = %s*x",s0);else if(c0>0)snprintf(out,outLen,"y = %s*x + %s",s0,s1);else snprintf(out,outLen,"y = %s*x - %.6g",s0,-c0);return true;}
+    bool doNormal(const char* s, char* out, int outLen) {int L=strlen(s),d=0,cp=-1;for(int i=0;i<L;i++){char c=s[i];if(c=='(')d++;else if(c==')')d--;else if(c==','&&d==0)cp=i;}if(cp<0)return false;int el=cp;while(el>0&&s[el-1]==' ')el--;if(el<=0||el>=80)return false;char expr[80];memcpy(expr,s,el);expr[el]=0;int as=cp+1;while(as<L&&s[as]==' ')as++;int ae=L;while(ae>as&&s[ae-1]==' ')ae--;if(ae-as<1||ae-as>=24)return false;char ab[24];memcpy(ab,s+as,ae-as);ab[ae-as]=0;double a=atof(ab);char fp[80];if(!doDerivativeImpl(expr,'x',fp,sizeof(fp)))return false;ExprEval::Subst sx={'x',a};auto rf=gEv.eval(expr,&sx,1);auto rf1=gEv.eval(fp,&sx,1);if(!rf.ok||!rf1.ok)return false;double m=rf1.val,b=rf.val;if(fabs(m)<1e-12){snprintf(out,outLen,"x = %.6g",a);return true;}double mn=-1.0/m;double c0=b-mn*a;char s0[40],s1[40];snprintf(s0,sizeof(s0),"%.6g",mn);snprintf(s1,sizeof(s1),"%.6g",c0);if(fabs(c0)<1e-12)snprintf(out,outLen,"y = %s*x",s0);else if(c0>0)snprintf(out,outLen,"y = %s*x + %s",s0,s1);else snprintf(out,outLen,"y = %s*x - %.6g",s0,-c0);return true;}
+    bool doFMinMax(const char* s, bool wantMax, char* out, int outLen) {char p[3][64];int pi=0,pj=0,d=0;for(int i=0;s[i]&&pi<3;i++){char c=s[i];if(c=='(')d++;else if(c==')')d--;if(c==','&&d==0){p[pi][pj]=0;pi++;pj=0;continue;}if(pj<63)p[pi][pj++]=c;}if(pi<3){p[pi][pj]=0;pi++;}if(pi<3)return false;char expr[80];int j=0;for(int i=0;p[0][i]&&j<79;i++)if(p[0][i]!=' ')expr[j++]=p[0][i];expr[j]=0;double a=atof(p[1]),b=atof(p[2]);if(a>=b)return false;ExprEval::Subst sx={'x',a};auto r=gEv.eval(expr,&sx,1);if(!r.ok)return false;double bestX=a,bestY=r.val;auto consider=[&](double xv){sx.val=xv;auto rr=gEv.eval(expr,&sx,1);if(!rr.ok)return;if(wantMax?rr.val>bestY:rr.val<bestY){bestY=rr.val;bestX=xv;}};consider(b);const int N=100;double dx=(b-a)/N;double prev=NumAnalysis::diffN(expr,'x',a);for(int i=1;i<=N;i++){double x=a+i*dx;double cur=NumAnalysis::diffN(expr,'x',x);if(prev*cur<0){double lo=x-dx,hi=x,pl=prev;for(int k=0;k<50;k++){double m=(lo+hi)/2;double fm=NumAnalysis::diffN(expr,'x',m);if(pl*fm<0)hi=m;else{lo=m;pl=fm;}}consider((lo+hi)/2);}prev=cur;}const int GN=1000;double gBestY=wantMax?-INFINITY:INFINITY;double gBestX=a;for(int i=0;i<=GN;i++){double x=a+(b-a)*i/GN;sx.val=x;auto rr=gEv.eval(expr,&sx,1);if(!rr.ok||isnan(rr.val)||isinf(rr.val))continue;if(wantMax?rr.val>gBestY:rr.val<gBestY){gBestY=rr.val;gBestX=x;}}if(wantMax?gBestY>bestY:gBestY<bestY){double lo=gBestX-(b-a)/GN,hi=gBestX+(b-a)/GN;if(lo<a)lo=a;if(hi>b)hi=b;for(int k=0;k<80;k++){double m1=lo+(hi-lo)*0.382;double m2=lo+(hi-lo)*0.618;sx.val=m1;auto r1=gEv.eval(expr,&sx,1);sx.val=m2;auto r2=gEv.eval(expr,&sx,1);if(!r1.ok||!r2.ok)break;if(wantMax?r1.val>r2.val:r1.val<r2.val)hi=m2;else lo=m1;}double xb=(lo+hi)/2;sx.val=xb;auto rr=gEv.eval(expr,&sx,1);if(rr.ok){bestX=xb;bestY=rr.val;}}snprintf(out,outLen,"%s at x=%.6g, f=%.6g",wantMax?"max":"min",bestX,bestY);return true;}
+    bool doFMin(const char* s, char* out, int outLen) { return doFMinMax(s, false, out, outLen); }
+    bool doFMax(const char* s, char* out, int outLen) { return doFMinMax(s, true, out, outLen); }
+    bool doDiffQ(const char* s, char* out, int outLen) {char p[3][64];int pi=0,pj=0,d=0;for(int i=0;s[i]&&pi<3;i++){char c=s[i];if(c=='(')d++;else if(c==')')d--;if(c==','&&d==0){p[pi][pj]=0;pi++;pj=0;continue;}if(pj<63)p[pi][pj++]=c;}if(pi<3){p[pi][pj]=0;pi++;}if(pi<3)return false;char expr[80];int j=0;for(int i=0;p[0][i]&&j<79;i++)if(p[0][i]!=' ')expr[j++]=p[0][i];expr[j]=0;double x=atof(p[1]),h=atof(p[2]);if(h==0)h=1e-4;ExprEval::Subst sp={'x',x+h},sm={'x',x-h};auto rp=gEv.eval(expr,&sp,1),rm=gEv.eval(expr,&sm,1);if(!rp.ok||!rm.ok)return false;double q=(rp.val-rm.val)/(2*h);snprintf(out,outLen,"%.6g  (h=%.4g)",q,h);return true;}
+    bool doArcLength(const char* s, char* out, int outLen) {char p[3][64];int pi=0,pj=0,d=0;for(int i=0;s[i]&&pi<3;i++){char c=s[i];if(c=='(')d++;else if(c==')')d--;if(c==','&&d==0){p[pi][pj]=0;pi++;pj=0;continue;}if(pj<63)p[pi][pj++]=c;}if(pi<3){p[pi][pj]=0;pi++;}if(pi<3)return false;char expr[80];int j=0;for(int i=0;p[0][i]&&j<79;i++)if(p[0][i]!=' ')expr[j++]=p[0][i];expr[j]=0;double a=atof(p[1]),b=atof(p[2]);if(a>=b)return false;const int N=200;double h=(b-a)/N;double sum=0;for(int i=0;i<=N;i++){double x=a+i*h;double fp=NumAnalysis::diffN(expr,'x',x);double f=sqrt(1+fp*fp);double coef=(i==0||i==N)?1:((i&1)?4:2);sum+=coef*f;}double L=h*sum/3.0;snprintf(out,outLen,"L = %.6g  (Simpson n=%d)",L,N);return true;}
+    bool doLeadingTerm(const char* s, char* out, int outLen) {
+        Polynomial p;
+        if (parsePoly(s, p)) {
+            if (p.deg == 0) { snprintf(out, outLen, "%.6g", p.c[0]); return true; }
+            if (p.deg == 1) {
+                if (fabs(p.c[1] - 1) < 1e-9) snprintf(out, outLen, "x");
+                else snprintf(out, outLen, "%.6g*x", p.c[1]);
+            } else {
+                if (fabs(p.c[p.deg] - 1) < 1e-9) snprintf(out, outLen, "x^%d", p.deg);
+                else snprintf(out, outLen, "%.6g*x^%d", p.c[p.deg], p.deg);
+            }
+            return true;
+        }
+        char nb[80], db[40];
+        if (dpSplit(s, nb, 80, db, 40)) {
+            Polynomial P, Q;
+            if (parsePoly(nb, P) && parsePoly(db, Q)) {
+                if (fabs(Q.c[Q.deg]) < 1e-15) return false;
+                double coef = P.c[P.deg] / Q.c[Q.deg];
+                int exp = P.deg - Q.deg;
+                if (exp == 0) snprintf(out, outLen, "%.6g", coef);
+                else if (exp == 1) {
+                    if (fabs(coef - 1) < 1e-9) snprintf(out, outLen, "x");
+                    else snprintf(out, outLen, "%.6g*x", coef);
+                } else if (exp > 1) {
+                    if (fabs(coef - 1) < 1e-9) snprintf(out, outLen, "x^%d", exp);
+                    else snprintf(out, outLen, "%.6g*x^%d", coef, exp);
+                } else {
+                    int ne = -exp;
+                    if (fabs(coef - 1) < 1e-9) snprintf(out, outLen, "1/x^%d", ne);
+                    else snprintf(out, outLen, "%.6g/x^%d", coef, ne);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool doSeries(const char* s, char* out, int outLen) { return doTaylor(s, out, outLen); }
+};
+
+int CasCommands::dParseExpr() {
+    int left = dParseTerm();
+    while (true) { dSkip();
+        if      (*dpp == '+') { dpp++; int r = dParseTerm(); left = dNewOp('+', left, r); }
+        else if (*dpp == '-') { dpp++; int r = dParseTerm(); left = dNewOp('-', left, r); }
+        else break;
+    }
+    return left;
+}
+
+CasCommands gCas;
 class CalculatorCore {
 public:
     void run() {
@@ -3754,7 +5497,7 @@ public:
             if (needRedraw) { drawScreen(input, cur); needRedraw = false; }
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (st.fn) {
                 if (M5Cardputer.Keyboard.isKeyPressed('1')) { settingsMenu();              needRedraw = true; continue; }
                 if (M5Cardputer.Keyboard.isKeyPressed('2')) { historyMenu(input, cur);     needRedraw = true; continue; }
@@ -3779,7 +5522,7 @@ public:
                 if (M5Cardputer.Keyboard.isKeyPressed(',')) { G.dispDigits = (G.dispDigits + 1) % 10; needRedraw = true; continue; }
                 if (M5Cardputer.Keyboard.isKeyPressed('/')) { G.dispDigits = (G.dispDigits + 9) % 10; needRedraw = true; continue; }
             }
-            if (st.del) { if (cur > 0) input[--cur] = 0; needRedraw = true; continue; }
+            if (st.del) { if (cur > 0) { int _l = strlen(input); for (int _i = cur - 1; _i < _l - 1; _i++) input[_i] = input[_i+1]; input[_l - 1] = 0; cur--; } needRedraw = true; continue; } /* Cursor edit mode */
             if (st.enter) {
                 if (input[0] == 0) { needRedraw = true; continue; }
                 if (G.rpn) processRPN(input);
@@ -3788,7 +5531,9 @@ public:
                 needRedraw = true;
                 continue;
             }
+            bool skipInsert = false;
             for (auto c : st.word) {
+                if (c == '<' || c == '>') { skipInsert = true; continue; }
                 if (G.rpn && (c=='+'||c=='-'||c=='*'||c=='/'||c=='^')) {
                     bool asSign = ((c=='+'||c=='-') &&
                                    (cur==0 || input[cur-1]=='e' || input[cur-1]=='E'));
@@ -3801,14 +5546,72 @@ public:
                         continue;
                     }
                 }
-                if (cur < 79 && c >= ' ' && c < 127) { input[cur++] = c; input[cur] = 0; }
+                if (cur < 79 && c >= ' ' && c < 127) {
+                    char cc = (c == '_') ? '-' : ((c == '-') ? '_' : c);
+                    int _l = strlen(input);
+                    if (cur < _l) for (int _i = _l; _i > cur; _i--) input[_i] = input[_i-1];
+                    input[cur++] = cc;
+                    input[cur] = 0;
+                }
             }
+            if (!G.rpn) {
+                if (M5Cardputer.Keyboard.isKeyPressed('<')) { if (cur > 0) cur--; needRedraw = true; }
+                if (M5Cardputer.Keyboard.isKeyPressed('>')) { if (cur < (int)strlen(input)) cur++; needRedraw = true; }
+            }
+            (void)skipInsert;
             if (!st.word.empty()) needRedraw = true;
         }
     }
-
 private:
-    void drawScreen(const char* input, int cur) {
+    static bool isSimpleFrac(const char* s, char* num, char* den) {
+        const char* sl = strchr(s, '/');
+        if (!sl) return false;
+        int nl = sl - s;
+        if (nl <= 0 || nl >= 16) return false;
+        for (int i = 0; i < nl; i++) if (!isdigit((unsigned char)s[i]) && s[i] != '-') return false;
+        const char* dp = sl + 1; int dl = strlen(dp);
+        if (dl <= 0 || dl >= 16) return false;
+        for (int i = 0; i < dl; i++) if (!isdigit((unsigned char)dp[i])) return false;
+        memcpy(num, s, nl); num[nl] = 0; strcpy(den, dp);
+        return true;
+    }
+
+    void drawFrac2D(int x, int y, const char* num, const char* den, uint16_t col) {
+        auto& d = M5Cardputer.Display;
+        int nw = textWidth(num), dw = textWidth(den);
+        int w = (nw > dw) ? nw : dw;
+        int avail = LCD_W - 4 - x;
+        if (avail < 4) return;
+        if (w > avail) { if (nw > avail) nw = avail; if (dw > avail) dw = avail; w = avail; }
+        d.setTextColor(col, C_BG);
+        d.drawString(num, x + (w - nw) / 2, y - 10);
+        d.drawString(den, x + (w - dw) / 2, y + 2);
+        d.drawFastHLine(x, y, w, col);
+    }    int drawNatural(int x, int y, const char* s, uint16_t col) {
+        auto& d = M5Cardputer.Display;
+        d.setTextColor(col, C_BG);
+        int cx = x;
+        for (int i = 0; s[i]; ) {
+            if (s[i] == '^' && (isdigit((unsigned char)s[i+1]) || s[i+1] == '-')) {
+                i++;
+                char tmp[4]; int tn = 0;
+                while (s[i] && (isdigit((unsigned char)s[i]) || s[i]=='-') && tn < 3) tmp[tn++] = s[i++];
+                tmp[tn] = 0;
+                int tw = textWidth(tmp);
+                if (cx + tw > LCD_W - 4) break;
+                d.drawString(tmp, cx, y - 3);
+                cx += tw - 1;
+            } else {
+                char t[2] = { s[i], 0 };
+                int tw = textWidth(t);
+                if (cx + tw > LCD_W - 4) break;
+                d.drawString(t, cx, y);
+                cx += tw;
+                i++;
+            }
+        }
+        return cx;
+    }    void drawScreen(const char* input, int cur) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG);
         DM.header("Calculator");
@@ -3833,10 +5636,9 @@ private:
                     snprintf(l, sizeof(l), "%s = ERR", G.hist[i].expr);
                 }
                 if (textWidth(l) > LCD_W - 8) l[(LCD_W - 8) / 6 - 2] = 0;
-                d.drawString(l, 4, y); y += 11;
+                drawNatural(4, y, l, C_DIM); y += 13;
             }
         }
-        char ansLine[64];
         char ansStr[40];
         if (G.ansComplex) G.ansC.toString(ansStr, sizeof(ansStr));
         else if (G.fracDisplay) {
@@ -3844,9 +5646,14 @@ private:
             if (tryDecimalToSpecial(G.ans, tmp, sizeof(tmp))) strcpy(ansStr, tmp);
             else formatNum(G.ans, ansStr, sizeof(ansStr));
         } else                  formatNum(G.ans, ansStr, sizeof(ansStr));
-        snprintf(ansLine, sizeof(ansLine), "Ans = %s", ansStr);
         d.setTextColor(C_OK, C_BG);
-        d.drawString(ansLine, 4, LCD_H - FTR_H - 30);
+        d.drawString("Ans =", 4, LCD_H - FTR_H - 30);
+        char _fn[20], _fd[20];
+        if (isSimpleFrac(ansStr, _fn, _fd)) {
+            drawFrac2D(46, LCD_H - FTR_H - 24, _fn, _fd, C_OK);
+        } else {
+            drawNatural(46, LCD_H - FTR_H - 30, ansStr, C_OK);
+        }
         d.fillRect(0, LCD_H - FTR_H - 17, LCD_W, 16, C_PANEL);
         d.drawFastHLine(0, LCD_H - FTR_H - 17, LCD_W, C_ACC);
         d.setTextColor(C_FG, C_PANEL);
@@ -3854,15 +5661,139 @@ private:
         const int fieldW = LCD_W - 8;
         const int maxChars = fieldW / 6;
         int len = strlen(input);
-        int startCh = (len > maxChars) ? (len - maxChars) : 0;
+        int startCh = 0;
+        if (len > maxChars) {
+            startCh = len - maxChars;
+            if (cur < startCh) startCh = cur;
+            else if (cur > startCh + maxChars - 1) startCh = cur - maxChars + 1;
+        }
         const char* visible = input + startCh;
         d.drawString(visible, fieldX, LCD_H - FTR_H - 14);
-        int cx = fieldX + textWidth(visible);
+        int visCur = cur - startCh;
+        char tmpVis[80]; int vl = strlen(visible);
+        if (visCur < 0) visCur = 0;
+        if (visCur > vl) visCur = vl;
+        memcpy(tmpVis, visible, visCur); tmpVis[visCur] = 0;
+        int cx = fieldX + textWidth(tmpVis);
         if (cx > LCD_W - 6) cx = LCD_W - 6;
         d.drawFastVLine(cx, LCD_H - FTR_H - 16, 14, C_ACC);
     }
 
+    bool isPureIdent(const char* s, int len) {
+        if (len < 1) return false;
+        if (!isalpha((unsigned char)s[0])) return false;
+        for (int i = 1; i < len; i++)
+            if (!isalnum((unsigned char)s[i]) && s[i] != '_') return false;
+        return true;
+    }
+
+    bool tryAssignOrFunc(const char* expr) {
+        int len = strlen(expr), eqPos = -1, depth = 0;
+        for (int i = 0; i < len; i++) {
+            char c = expr[i];
+            if (c == '(') depth++;
+            else if (c == ')') { if (depth > 0) depth--; }
+            else if (c == '=' && depth == 0) {
+                if (i+1 < len && expr[i+1] == '=') return false;
+                if (eqPos >= 0) return false;
+                eqPos = i;
+            }
+        }
+        if (eqPos < 0) return false;
+        int ls = 0, le = eqPos - 1;
+        while (ls <= le && expr[ls] == ' ') ls++;
+        while (le >= ls && expr[le] == ' ') le--;
+        if (ls > le) return false;
+        int lhsLen = le - ls + 1;
+        if (lhsLen > 15) return false;
+        char lhs[16]; memcpy(lhs, expr+ls, lhsLen); lhs[lhsLen] = 0;
+        int rs = eqPos + 1;
+        while (rs < len && expr[rs] == ' ') rs++;
+        if (rs >= len) return false;
+        const char* rhs = expr + rs;
+        char* lp = strchr(lhs, '(');
+        if (lp) {
+            char* rp = strchr(lp, ')');
+            if (!rp || rp[1] != 0) return false;
+            int nl = lp - lhs;
+            if (nl < 1 || nl > 11) return false;
+            if (rp - lp != 2) { DM.notify("1-char param", C_ERR, 1000); return true; }
+            char prm = lp[1];
+            if (!isalpha((unsigned char)prm)) return false;
+            if (!isPureIdent(lhs, nl)) return false;
+            static const char* BAD[] = {"sin","cos","tan","asin","acos","atan",
+                "sinh","cosh","tanh","exp","ln","log","sqrt","abs","floor",
+                "ceil","round","fact","gamma","pow","mod","gcd","min","max",0};
+            for (int i = 0; BAD[i]; i++)
+                if (!strcmp(lhs, BAD[i])) { DM.notify("reserved name", C_ERR, 1000); return true; }
+            ExprEval::Subst us = { prm, 1.0 };
+            auto tr = gEv.eval(rhs, &us, 1);
+            if (!tr.ok) { DM.notify(tr.err ? tr.err : "err", C_ERR, 1000); return true; }
+            gUserFns.remove(lhs);
+            if (!gUserFns.add(lhs, prm, rhs)) { DM.notify("fn bank full", C_ERR, 1000); return true; }
+            char m[32]; snprintf(m, sizeof(m), "Def: %s(%c)", lhs, prm);
+            DM.notify(m, C_OK, 1000);
+            G.pushHist(expr, 0, true);
+            return true;
+        }
+        if (isPureIdent(lhs, lhsLen)) {
+            if (lhsLen == 1) {
+                char c = tolower(lhs[0]);
+                if (c >= 'a' && c <= 'j') {
+                    auto r = gEv.eval(rhs);
+                    if (!r.ok) { DM.notify(r.err ? r.err : "err", C_ERR, 1000); return true; }
+                    G.vars[c - 'a'] = r.val;
+                    char vs[24]; formatNum(r.val, vs, sizeof(vs));
+                    char m[32]; snprintf(m, sizeof(m), "%c = %s", toupper((unsigned char)c), vs);
+                    DM.notify(m, C_OK, 800);
+                    G.pushHist(expr, r.val, true);
+                    return true;
+                }
+            }
+            DM.notify("use f(x)= form", C_WARN, 1200);
+            return true;
+        }
+        return false;
+    }
+
+    bool tryCasCommand(const char* expr) {
+        int len = strlen(expr);
+        int i = 0; while (i < len && expr[i]==' ') i++;
+        int start = i;
+        while (i < len && (isalpha((unsigned char)expr[i]) || expr[i]=='_')) i++;
+        int cl = i - start;
+        if (cl < 1 || cl >= 16) return false;
+        char cmd[16]; memcpy(cmd, expr+start, cl); cmd[cl] = 0;
+        if (i >= len || expr[i] != '(') return false;
+        int e = len - 1;
+        while (e > i && expr[e]==' ') e--;
+        if (e <= i || expr[e] != ')') return false;
+        char arg[80]; int al = e - i - 1;
+        if (al < 1 || al >= 80) return false;
+        memcpy(arg, expr+i+1, al); arg[al] = 0;
+        char result[128];
+        if (!gCas.run(cmd, arg, result, sizeof(result))) return false;
+        showCasResult(cmd, result);
+        return true;
+    }
+
+    void showCasResult(const char* cmd, const char* result) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG);
+        DM.header(cmd);
+        DM.footer("","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        DM.drawWrapped(result, 4, HDR_H + 4, LCD_W - 8, C_OK);
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+        }
+    }
+
     void processAlgebraic(const char* expr) {
+        if (tryAssignOrFunc(expr)) return;
+        if (tryCasCommand(expr)) return;
         auto r = gEv.eval(expr);
         if (!r.ok) {
             DM.notify(r.err ? r.err : "ERR", C_ERR, 1000);
@@ -3878,6 +5809,7 @@ private:
         G.rpnStk[0] = v;
         G.rpnSp = (G.rpnSp < 4) ? G.rpnSp + 1 : 4;
     }
+
     double rpnPop() {
         double v = G.rpnStk[0];
         for (int i = 0; i < 3; i++) G.rpnStk[i] = G.rpnStk[i+1];
@@ -3885,6 +5817,7 @@ private:
         G.rpnSp = (G.rpnSp > 0) ? G.rpnSp - 1 : 0;
         return v;
     }
+
     void processRPN(const char* expr) {
         char buf[80]; strncpy(buf, expr, 79); buf[79] = 0;
         char* tok = strtok(buf, " \t");
@@ -3933,10 +5866,10 @@ private:
         while (true) {
             const char* items[] = {
                 "Angle: DEG/RAD/GRAD","Display: Norm/Fix/Sci/Eng","Display digits",
-                "Norm 1/2 threshold","Reset all","Back"
+                "Norm 1/2 threshold","Auto power off (min)","Reset all","Back"
             };
-            int s = DM.menu("Settings", items, 6);
-            if (s < 0 || s == 5) return;
+            int s = DM.menu("Settings", items, 7);
+            if (s < 0 || s == 6) return;
             if (s == 0) {
                 const char* a[] = {"DEG","RAD","GRAD"};
                 int x = DM.menu("Angle", a, 3, G.angle);
@@ -3960,6 +5893,13 @@ private:
                 if (x >= 0) G.normMode = x + 1;
             }
             else if (s == 4) {
+                char b[8]; snprintf(b, sizeof(b), "%d", G.autoOffMin);
+                if (DM.inputLine("auto off min (0=off):", b, sizeof(b))) {
+                    int v = atoi(b);
+                    if (v >= 0 && v <= 600) G.autoOffMin = v;
+                }
+            }
+            else if (s == 5) {
                 if (DM.confirm("Reset all?")) { G.resetAll(); DM.notify("Reset done", C_OK); }
             }
         }
@@ -3968,8 +5908,10 @@ private:
     void historyMenu(char* input, int& cur) {
         if (G.histN == 0) { DM.notify("Empty", C_DIM); return; }
         char** labels = (char**)malloc(G.histN * sizeof(char*));
+        if (!labels) { DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < G.histN; i++) {
             labels[i] = (char*)malloc(80);
+            if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
             char vs[40]; formatNum(G.hist[i].value, vs, sizeof(vs));
             snprintf(labels[i], 80, "%s=%s", G.hist[i].expr, vs);
         }
@@ -4008,8 +5950,10 @@ private:
     void varsMenu() {
         while (true) {
             char** labels = (char**)malloc(VAR_COUNT * sizeof(char*));
+            if (!labels) return;
             for (int i = 0; i < VAR_COUNT; i++) {
-                labels[i] = (char*)malloc(40);
+                labels[i] = (char*)malloc(40); if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
+                if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
                 char vs[24]; formatNum(G.vars[i], vs, sizeof(vs));
                 snprintf(labels[i], 40, "%c = %s", 'A'+i, vs);
             }
@@ -4031,17 +5975,19 @@ private:
         while (true) {
             int nItems = G.bankN + 4;
             char** labels = (char**)malloc(nItems * sizeof(char*));
+            if (!labels) return;
             for (int i = 0; i < G.bankN; i++) {
-                labels[i] = (char*)malloc(48);
+                labels[i] = (char*)malloc(48); if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
+                if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
                 char vs[24]; formatNum(G.bank[i], vs, sizeof(vs));
                 if (G.bankLabel[i][0]) snprintf(labels[i], 48, "%-8s = %s", G.bankLabel[i], vs);
                 else                   snprintf(labels[i], 48, "[%d]      = %s", i, vs);
             }
             int op = G.bankN;
-            labels[op] = (char*)malloc(48); snprintf(labels[op], 48, "[+] Add current Ans");
-            labels[op+1] = (char*)malloc(48); snprintf(labels[op+1], 48, "[V] Pop to variable A..J");
-            labels[op+2] = (char*)malloc(48); snprintf(labels[op+2], 48, "[C] Clear all bank");
-            labels[op+3] = (char*)malloc(48); snprintf(labels[op+3], 48, "[<-] Back");
+            labels[op] = (char*)malloc(48); labels[op+1] = (char*)malloc(48); labels[op+2] = (char*)malloc(48); labels[op+3] = (char*)malloc(48);
+            if (!labels[op] || !labels[op+1] || !labels[op+2] || !labels[op+3]) { for (int k = 0; k < op + 4; k++) free(labels[k]); free(labels); return; }
+            snprintf(labels[op], 48, "[+] Add current Ans"); snprintf(labels[op+1], 48, "[V] Pop to variable A..J");
+            snprintf(labels[op+2], 48, "[C] Clear all bank"); snprintf(labels[op+3], 48, "[<-] Back");
             const char** clabels = (const char**)labels;
             char title[32]; snprintf(title, sizeof(title), "Ans Bank (%d/%d)", G.bankN, ANS_BANK_MAX);
             int s = DM.menu(title, clabels, nItems);
@@ -4114,7 +6060,6 @@ private:
         else if (b[0] == '0' && (b[1] == 'o' || b[1] == 'O')) v = strtoll(b+2, nullptr, 8);
         else if (b[0] == '0' && b[1] >= '0' && b[1] <= '7')   v = strtoll(b+1, nullptr, 8);
         else                                                  v = (long long)atof(b);
-
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG);
         DM.header("Base Convert");
@@ -4140,7 +6085,7 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y') ||
                 M5Cardputer.Keyboard.isKeyPressed('Y')) {
                 G.ans = (double)v; G.ansComplex = false;
@@ -4271,14 +6216,13 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y') ||
                 M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans", C_OK); return; }
         }
     }
 
     void extToolMenu(char* input, int& cur);
-
     void helpScreen() {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Calculator Help"); DM.footer("","","ESC:back");
@@ -4303,7 +6247,6 @@ private:
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 11 / 20 ─ 方程式ソルバー / 数値解析 / ベクトル・行列 / 幾何     ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class EqSolver {
 public:
     void run() {
@@ -4312,6 +6255,7 @@ public:
             "Cubic ax^3+...","Quartic ax^4+...","Linear System (n<=5)",
             "General Polynomial","Back"
         };
+        for (;;) {
         int s = DM.menu("Equation Solver", items, 8);
         if (s < 0 || s == 7) return;
         char b[80];
@@ -4418,8 +6362,8 @@ public:
                 DM.waitEsc();
             } break;
         }
+        }
     }
-
 private:
     void showResult(const char* name, double v) {
         auto& d = M5Cardputer.Display;
@@ -4432,6 +6376,7 @@ private:
         G.ans = v; G.ansComplex = false;
         DM.waitEsc();
     }
+
     void showRoots(const char* title, double* re, double* im, int n) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(title); DM.footer("Y:r1->Ans","","ESC:back");
@@ -4448,51 +6393,367 @@ private:
             }
             d.drawString(l, 4, HDR_H + 4 + i*12);
         }
-        G.ans = re[0]; G.ansComplex = (fabs(im[0]) > 1e-9);
-        if (G.ansComplex) G.ansC = Complex(re[0], im[0]);
+        if (n > 0) {
+            G.ans = re[0]; G.ansComplex = (fabs(im[0]) > 1e-9);
+            if (G.ansComplex) G.ansC = Complex(re[0], im[0]);
+        }
         DM.waitEsc();
     }
 };
 
+// ── Part 12b: 最適化 (Nelder-Mead / 勾配降下) と線形計画 (2段階シンプレックス法) ──
+namespace Optim {
+#define OPT_MAXN 4
+#define LP_MAXN  6
+#define LP_MAXM  8
+#define LP_W     (LP_MAXN + 2*LP_MAXM + 1)
+enum { LP_OK = 0, LP_INFEASIBLE = 1, LP_UNBOUNDED = 2, LP_ITER = 3 };
+typedef double (*ObjFn)(const double* x, int n, void* ctx);
+// Nelder-Mead 法 (n <= OPT_MAXN)。戻り値: 反復回数
+inline int nelderMead(ObjFn f, void* ctx, int n, const double* x0, double* xb, double* fb, int maxIter = 800) {
+    double P[OPT_MAXN+1][OPT_MAXN], F[OPT_MAXN+1];
+    for (int v = 0; v <= n; v++) {
+        for (int i = 0; i < n; i++) P[v][i] = x0[i];
+        if (v > 0) P[v][v-1] += 0.1 * fabs(x0[v-1]) + 0.1;
+        F[v] = f(P[v], n, ctx);
+    }
+
+    int it = 0;
+    for (; it < maxIter; it++) {
+        for (int a = 1; a <= n; a++) {            // 挿入ソート (F 昇順)
+            double fk = F[a], pk[OPT_MAXN];
+            for (int i = 0; i < n; i++) pk[i] = P[a][i];
+            int b = a - 1;
+            while (b >= 0 && F[b] > fk) {
+                F[b+1] = F[b];
+                for (int i = 0; i < n; i++) P[b+1][i] = P[b][i];
+                b--;
+            }
+            F[b+1] = fk;
+            for (int i = 0; i < n; i++) P[b+1][i] = pk[i];
+        }
+        double size = 0;
+        for (int v = 1; v <= n; v++)
+            for (int i = 0; i < n; i++) { double d = fabs(P[v][i] - P[0][i]); if (d > size) size = d; }
+        if (fabs(F[n] - F[0]) <= 1e-13 * (1 + fabs(F[0])) && size <= 1e-9 * (1 + fabs(P[0][0]))) break;
+        double cen[OPT_MAXN] = {0}, xr[OPT_MAXN], xe[OPT_MAXN], xc[OPT_MAXN];
+        for (int v = 0; v < n; v++) for (int i = 0; i < n; i++) cen[i] += P[v][i] / n;
+        for (int i = 0; i < n; i++) xr[i] = cen[i] + (cen[i] - P[n][i]);
+        double fr = f(xr, n, ctx);
+        if (fr < F[0]) {
+            for (int i = 0; i < n; i++) xe[i] = cen[i] + 2 * (cen[i] - P[n][i]);
+            double fe = f(xe, n, ctx);
+            if (fe < fr) { for (int i = 0; i < n; i++) P[n][i] = xe[i]; F[n] = fe; }
+            else         { for (int i = 0; i < n; i++) P[n][i] = xr[i]; F[n] = fr; }
+        } else if (fr < F[n-1]) {
+            for (int i = 0; i < n; i++) P[n][i] = xr[i]; F[n] = fr;
+        } else {
+            bool outside = (fr < F[n]);
+            for (int i = 0; i < n; i++)
+                xc[i] = outside ? cen[i] + 0.5 * (xr[i] - cen[i]) : cen[i] + 0.5 * (P[n][i] - cen[i]);
+            double fc = f(xc, n, ctx);
+            if (fc < (outside ? fr : F[n])) { for (int i = 0; i < n; i++) P[n][i] = xc[i]; F[n] = fc; }
+            else {
+                for (int v = 1; v <= n; v++) {
+                    for (int i = 0; i < n; i++) P[v][i] = P[0][i] + 0.5 * (P[v][i] - P[0][i]);
+                    F[v] = f(P[v], n, ctx);
+                }
+            }
+        }
+    }
+
+    int bi = 0;
+    for (int v = 1; v <= n; v++) if (F[v] < F[bi]) bi = v;
+    for (int i = 0; i < n; i++) xb[i] = P[bi][i];
+    *fb = F[bi];
+    return it;
+}
+
+// 勾配降下法 (中心差分の勾配 + Armijo 後退直線探索)。戻り値: 反復回数
+inline int gradDescent(ObjFn f, void* ctx, int n, const double* x0, double* xb, double* fb, int maxIter = 3000) {
+    double x[OPT_MAXN], xn[OPT_MAXN], g[OPT_MAXN];
+    for (int i = 0; i < n; i++) x[i] = x0[i];
+    double fx = f(x, n, ctx), t = 1.0;
+    int it = 0;
+    for (; it < maxIter; it++) {
+        double gn2 = 0;
+        for (int i = 0; i < n; i++) {
+            double h = 1e-6 * (1 + fabs(x[i])), xi = x[i];
+            x[i] = xi + h; double fp = f(x, n, ctx);
+            x[i] = xi - h; double fm = f(x, n, ctx);
+            x[i] = xi;
+            g[i] = (fp - fm) / (2 * h);
+            gn2 += g[i] * g[i];
+        }
+        if (!(gn2 > 1e-20)) break;
+        t = fmin(t * 2, 1e3);
+        bool ok = false;
+        while (t > 1e-16) {
+            for (int i = 0; i < n; i++) xn[i] = x[i] - t * g[i];
+            double fn = f(xn, n, ctx);
+            if (fn <= fx - 1e-4 * t * gn2) { for (int i = 0; i < n; i++) x[i] = xn[i]; fx = fn; ok = true; break; }
+            t *= 0.5;
+        }
+        if (!ok) break;
+    }
+    for (int i = 0; i < n; i++) xb[i] = x[i];
+    *fb = fx;
+    return it;
+}
+
+inline void lpPivot(double T[][LP_W], int rows, int cols, int pr, int pc) {
+    double pv = T[pr][pc];
+    for (int j = 0; j < cols; j++) T[pr][j] /= pv;
+    for (int i = 0; i < rows; i++) {
+        if (i == pr) continue;
+        double fct = T[i][pc];
+        if (fct != 0) for (int j = 0; j < cols; j++) T[i][j] -= fct * T[pr][j];
+    }
+}
+
+// 行0 = 目的関数行 (最小化、被約費用)。Bland の規則で巡回を防止。
+inline int lpIterate(double T[][LP_W], int m, int cols, int* basis, int allow) {
+    const int rhs = cols - 1;
+    for (int it = 0; it < 500; it++) {
+        int pc = -1;
+        for (int j = 0; j < allow; j++) if (T[0][j] < -1e-9) { pc = j; break; }
+        if (pc < 0) return LP_OK;
+        int pr = -1; double best = 1e300;
+        for (int i = 1; i <= m; i++) {
+            if (T[i][pc] > 1e-9) {
+                double r = T[i][rhs] / T[i][pc];
+                if (r < best - 1e-12 || (fabs(r - best) <= 1e-12 && pr >= 0 && basis[i] < basis[pr])) { best = r; pr = i; }
+            }
+        }
+        if (pr < 0) return LP_UNBOUNDED;
+        lpPivot(T, m + 1, cols, pr, pc);
+        basis[pr] = pc;
+    }
+    return LP_ITER;
+}
+
+// max/min c.x  s.t.  A x (rel) b,  x >= 0。rel: -1 は <=、0 は =、+1 は >=
+inline int simplexLP(int n, int m, const double* c, const double A[][LP_MAXN], const int* rel,
+                     const double* b, bool maximize, double* x, double* obj) {
+    if (n < 1 || n > LP_MAXN || m < 1 || m > LP_MAXM) return LP_ITER;
+    double T[LP_MAXM + 1][LP_W];
+    int basis[LP_MAXM + 1];
+    const int cols = n + 2 * m + 1, rhs = cols - 1, art = n + m;
+    for (int i = 0; i <= m; i++) for (int j = 0; j < LP_W; j++) T[i][j] = 0;
+    bool phase1 = false;
+    for (int i = 0; i < m; i++) {
+        int row = i + 1;
+        double sg = (b[i] < 0) ? -1.0 : 1.0;
+        int r = (int)sg * rel[i];
+        for (int j = 0; j < n; j++) T[row][j] = sg * A[i][j];
+        T[row][rhs] = sg * b[i];
+        if (r < 0)      { T[row][n + i] = 1;  basis[row] = n + i; }
+        else if (r > 0) { T[row][n + i] = -1; T[row][art + i] = 1; basis[row] = art + i; phase1 = true; }
+        else            { T[row][art + i] = 1; basis[row] = art + i; phase1 = true; }
+    }
+    if (phase1) {
+        for (int i = 0; i < m; i++) if (T[i+1][art + i] != 0) T[0][art + i] = 1;
+        for (int row = 1; row <= m; row++)
+            if (basis[row] >= art) for (int j = 0; j < cols; j++) T[0][j] -= T[row][j];
+        int rc = lpIterate(T, m, cols, basis, cols - 1);
+        if (rc != LP_OK) return rc;
+        if (-T[0][rhs] > 1e-7) return LP_INFEASIBLE;
+        for (int row = 1; row <= m; row++) {
+            if (basis[row] < art) continue;
+            for (int j = 0; j < art; j++)
+                if (fabs(T[row][j]) > 1e-9) { lpPivot(T, m + 1, cols, row, j); basis[row] = j; break; }
+        }
+    }
+
+    double cost[LP_W];
+    for (int j = 0; j < LP_W; j++) cost[j] = 0;
+    for (int j = 0; j < n; j++) cost[j] = maximize ? -c[j] : c[j];
+    for (int j = 0; j < cols; j++) T[0][j] = (j < LP_W) ? cost[j] : 0;
+    T[0][rhs] = 0;
+    for (int row = 1; row <= m; row++) {
+        double cb = cost[basis[row]];
+        if (cb != 0) for (int j = 0; j < cols; j++) T[0][j] -= cb * T[row][j];
+    }
+
+    int rc = lpIterate(T, m, cols, basis, art);
+    if (rc != LP_OK) return rc;
+    for (int j = 0; j < n; j++) x[j] = 0;
+    for (int row = 1; row <= m; row++) if (basis[row] < n) x[basis[row]] = T[row][rhs];
+    double o = 0; for (int j = 0; j < n; j++) o += c[j] * x[j];
+    *obj = o;
+    return LP_OK;
+}
+} // namespace Optim
 class NumMenu {
 public:
     void run() {
         const char* items[] = {
             "d/dx f(x) at a","Integral f(x) [a,b]","Sum f(i) [a,b]",
-            "Product f(i) [a,b]","Back"
+            "Product f(i) [a,b]","Optimize f (min/max)","Linear Programming","Back"
         };
-        int s = DM.menu("Numerical Analysis", items, 5);
-        if (s < 0 || s == 4) return;
+        for (;;) {
+        int s = DM.menu("Numerical Analysis", items, 7);
+        if (s < 0 || s == 6) return;
+        if (s == 4) { optimizeMenu(); continue; }
+        if (s == 5) { lpMenu(); continue; }
         char e[80] = "x^2";
-        if (!DM.inputLine("f(x)=", e, sizeof(e))) return;
+        if (!DM.inputLine("f(x)=", e, sizeof(e))) continue;
         char b[24];
         if (s == 0) {
-            strcpy(b, "1"); if (!DM.inputLine("at x=", b, sizeof(b))) return;
+            strcpy(b, "1"); if (!DM.inputLine("at x=", b, sizeof(b))) continue;
             double err = 0;
             double r = NumAnalysis::diffN(e, 'x', atof(b), 0.0, &err);
             showResult("df/dx", r, err);
         } else if (s == 1) {
             char a[24] = "0", c[24] = "1";
-            if (!DM.inputLine("a:", a, sizeof(a))) return;
-            if (!DM.inputLine("b:", c, sizeof(c))) return;
+            if (!DM.inputLine("a:", a, sizeof(a))) continue;
+            if (!DM.inputLine("b:", c, sizeof(c))) continue;
             double err = 0;
             double r = NumAnalysis::integN(e, 'x', atof(a), atof(c), 0, &err);
             showResult("Integral", r, err);
         } else if (s == 2) {
             char a[24] = "1", c[24] = "10";
-            if (!DM.inputLine("a:", a, sizeof(a))) return;
-            if (!DM.inputLine("b:", c, sizeof(c))) return;
+            if (!DM.inputLine("a:", a, sizeof(a))) continue;
+            if (!DM.inputLine("b:", c, sizeof(c))) continue;
             double r = NumAnalysis::sumN(e, 'x', atof(a), atof(c));
             showResult("Sum", r);
         } else if (s == 3) {
             char a[24] = "1", c[24] = "5";
-            if (!DM.inputLine("a:", a, sizeof(a))) return;
-            if (!DM.inputLine("b:", c, sizeof(c))) return;
+            if (!DM.inputLine("a:", a, sizeof(a))) continue;
+            if (!DM.inputLine("b:", c, sizeof(c))) continue;
             double r = NumAnalysis::prodN(e, 'x', atof(a), atof(c));
             showResult("Product", r);
         }
+        }
     }
 private:
+    struct OptCtx { const char* expr; int n; bool neg; };
+    static double optObj(const double* x, int n, void* ctx) {
+        OptCtx* c = (OptCtx*)ctx;
+        ExprEval::Subst sb[3] = {{'x', 0}, {'y', 0}, {'z', 0}};
+        for (int i = 0; i < n && i < 3; i++) sb[i].val = x[i];
+        auto r = gEv.eval(c->expr, sb, n);
+        if (!r.ok || isnan(r.val) || isinf(r.val)) return 1e300;
+        return c->neg ? -r.val : r.val;
+    }
+
+    void optimizeMenu() {
+        char e[80] = "(x-1)^2+(y+2)^2";
+        if (!DM.inputLine("f(x,y,z)=", e, sizeof(e))) return;
+        char b[16] = "2";
+        if (!DM.inputLine("# vars (1-3):", b, sizeof(b))) return;
+        int n = atoi(b);
+        if (n < 1 || n > 3) { DM.notify("1..3", C_ERR); return; }
+        const char* gi[] = {"Minimize", "Maximize"};
+        int goal = DM.menu("Goal", gi, 2); if (goal < 0) return;
+        const char* mi[] = {"Nelder-Mead (simplex)", "Gradient descent"};
+        int mt = DM.menu("Method", mi, 2); if (mt < 0) return;
+        double x0[OPT_MAXN] = {0};
+        const char nm[] = "xyz";
+        for (int i = 0; i < n; i++) {
+            char p[16]; snprintf(p, sizeof(p), "%c0 =", nm[i]);
+            char v[24] = "0";
+            if (!DM.inputLine(p, v, sizeof(v))) return;
+            x0[i] = atof(v);
+        }
+        OptCtx ctx = { e, n, goal == 1 };
+        if (optObj(x0, n, &ctx) >= 1e300) { DM.notify("f(x0) invalid", C_ERR); return; }
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Optimize");
+        d.setTextColor(C_DIM, C_BG); d.drawString("Working...", 4, HDR_H + 8);
+        double xb[OPT_MAXN], fb;
+        int it = (mt == 0) ? Optim::nelderMead(optObj, &ctx, n, x0, xb, &fb)
+                           : Optim::gradDescent(optObj, &ctx, n, x0, xb, &fb);
+        if (mt == 1 && it >= 2999) {
+            double xb2[OPT_MAXN], fb2;
+            int it2 = Optim::nelderMead(optObj, &ctx, n, xb, xb2, &fb2);
+            if (fb2 < fb) { for (int i = 0; i < n; i++) xb[i] = xb2[i]; fb = fb2; }
+            it += it2;
+        }
+        double fv = (goal == 1) ? -fb : fb;
+        d.fillScreen(C_BG); DM.header(goal == 1 ? "Maximum" : "Minimum"); DM.footer("Y:Ans", "", "ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        for (int i = 0; i < n; i++) {
+            char vs[28], l[40]; formatNum(xb[i], vs, sizeof(vs));
+            snprintf(l, sizeof(l), "%c* = %s", nm[i], vs);
+            d.drawString(l, 4, HDR_H + 6 + i * 13);
+        }
+        char vs[28], l[44]; formatNum(fv, vs, sizeof(vs));
+        snprintf(l, sizeof(l), "f* = %s", vs); d.drawString(l, 4, HDR_H + 6 + n * 13);
+        d.setTextColor(C_DIM, C_BG);
+        snprintf(l, sizeof(l), "%s  iter=%d", mt == 0 ? "Nelder-Mead" : "GradDesc", it);
+        d.drawString(l, 4, HDR_H + 10 + (n + 1) * 13);
+        G.ans = fv; G.ansComplex = false;
+        DM.waitEsc();
+    }
+
+    // "a1 a2 ... an [<=|=|>=] b" を解析 (rel==nullptr なら係数のみ)
+    static bool lpParseRow(const char* s, int n, double* a, int* rel, double* rhs) {
+        const char* p = s; char* e;
+        for (int j = 0; j < n; j++) {
+            while (*p == ' ' || *p == ',') p++;
+            double v = strtod(p, &e);
+            if (e == p) return false;
+            a[j] = v; p = e;
+        }
+        while (*p == ' ') p++;
+        if (!rel) return *p == 0;
+        if (*p == '<')      { *rel = -1; p++; if (*p == '=') p++; }
+        else if (*p == '>') { *rel =  1; p++; if (*p == '=') p++; }
+        else if (*p == '=') { *rel =  0; p++; if (*p == '=') p++; else if (*p == '<') { *rel = -1; p++; } else if (*p == '>') { *rel = 1; p++; } }
+        else return false;
+        double v = strtod(p, &e);
+        if (e == p) return false;
+        *rhs = v; p = e;
+        while (*p == ' ') p++;
+        return *p == 0;
+    }
+
+    void lpMenu() {
+        const char* gi[] = {"Maximize", "Minimize"};
+        int goal = DM.menu("LP goal", gi, 2); if (goal < 0) return;
+        char b[16] = "2";
+        if (!DM.inputLine("# vars (1-6):", b, sizeof(b))) return;
+        int n = atoi(b);
+        if (n < 1 || n > LP_MAXN) { DM.notify("1..6", C_ERR); return; }
+        strcpy(b, "2");
+        if (!DM.inputLine("# constraints (1-8):", b, sizeof(b))) return;
+        int m = atoi(b);
+        if (m < 1 || m > LP_MAXM) { DM.notify("1..8", C_ERR); return; }
+        char line[64] = "";
+        double c[LP_MAXN] = {0}, A[LP_MAXM][LP_MAXN] = {{0}}, rhs[LP_MAXM] = {0};
+        int rel[LP_MAXM] = {0};
+        if (!DM.inputLine("c1 .. cn:", line, sizeof(line))) return;
+        if (!lpParseRow(line, n, c, nullptr, nullptr)) { DM.notify("Bad objective", C_ERR); return; }
+        for (int i = 0; i < m; i++) {
+            char p[24]; snprintf(p, sizeof(p), "con%d a.. op b:", i + 1);
+            line[0] = 0;
+            if (!DM.inputLine(p, line, sizeof(line))) return;
+            if (!lpParseRow(line, n, A[i], &rel[i], &rhs[i])) { DM.notify("Bad row", C_ERR); return; }
+        }
+        double x[LP_MAXN] = {0}, obj = 0;
+        int rc = Optim::simplexLP(n, m, c, A, rel, rhs, goal == 0, x, &obj);
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Linear Programming"); DM.footer("Y:Ans", "", "ESC:back");
+        if (rc != Optim::LP_OK) {
+            d.setTextColor(C_ERR, C_BG);
+            d.drawString(rc == Optim::LP_INFEASIBLE ? "Infeasible" :
+                         rc == Optim::LP_UNBOUNDED  ? "Unbounded"  : "No convergence", 4, HDR_H + 10);
+            DM.waitEsc(); return;
+        }
+        d.setTextColor(C_OK, C_BG);
+        for (int j = 0; j < n; j++) {
+            char vs[28], l[40]; formatNum(x[j], vs, sizeof(vs));
+            snprintf(l, sizeof(l), "x%d = %s", j + 1, vs);
+            d.drawString(l, 4, HDR_H + 4 + j * 11);
+        }
+        char vs[28], l[44]; formatNum(obj, vs, sizeof(vs));
+        d.setTextColor(C_ACC, C_BG);
+        snprintf(l, sizeof(l), "obj = %s", vs); d.drawString(l, 4, HDR_H + 8 + n * 11);
+        G.ans = obj; G.ansComplex = false;
+        DM.waitEsc();
+    }
+
     void showResult(const char* nm, double v, double err = -1) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(nm); DM.footer("Y:Ans","","ESC:back");
@@ -4518,6 +6779,7 @@ public:
             "Edit Vector A","Edit Vector B","Vector ops (A.B, AxB, |A|, A+B, A-B)",
             "Edit Matrix A","Edit Matrix B","Matrix ops (mul, det, inv, T, rank, eig)","Back"
         };
+        for (;;) {
         int s = DM.menu("Vec / Mat", items, 7);
         if (s < 0 || s == 6) return;
         switch (s) {
@@ -4527,6 +6789,7 @@ public:
             case 3: editMat(0); break;
             case 4: editMat(1); break;
             case 5: matOps();   break;
+        }
         }
     }
 private:
@@ -4545,6 +6808,7 @@ private:
         }
         DM.notify("Saved", C_OK);
     }
+
     void vecOps() {
         const char* items[] = {"A . B (dot)","A x B (cross 3D)","|A|","|B|","A + B","A - B","Back"};
         int s = DM.menu("Vector Op", items, 7);
@@ -4571,13 +6835,13 @@ private:
         d.setTextColor(C_OK, C_BG);
         if (isVec) {
             int dim = (s == 1) ? 3 : G.vecAdim;
-            char l[40]; l[0] = '('; l[1] = 0;
+            char l[200]; l[0] = '('; l[1] = 0;
             for (int i = 0; i < dim; i++) {
                 char vs[16]; formatNum(rv[i], vs, sizeof(vs));
-                strncat(l, vs, sizeof(l) - strlen(l) - 2);
-                if (i < dim-1) strcat(l, ", ");
+                strncat(l, vs, sizeof(l) - strlen(l) - 3);
+                if (i < dim-1) strncat(l, ", ", sizeof(l) - strlen(l) - 1);
             }
-            strcat(l, ")");
+            strncat(l, ")", sizeof(l) - strlen(l) - 1);
             d.drawString(l, 4, HDR_H + 12);
             G.ans = rv[0];
         } else {
@@ -4588,6 +6852,7 @@ private:
         G.ansComplex = false;
         DM.waitEsc();
     }
+
     void editMat(int sel) {
         double* M = (sel == 0) ? G.matA : G.matB;
         int* nr = (sel == 0) ? &G.matAr : &G.matBr;
@@ -4608,13 +6873,15 @@ private:
             }
         DM.notify("Saved", C_OK);
     }
+
     void matOps() {
         const char* items[] = {
             "A * B","A + B","A - B","Transpose A","det A","inv A","rank A",
-            "Eigenvalues A","Show A","Show B","Back"
+            "Eigenvalues A","Show A","Show B",
+            "trace A","A^n","LU (PA=LU)","QR (A=QR)","charPoly A","Eigenvectors A","Back"
         };
-        int s = DM.menu("Matrix Op", items, 11);
-        if (s < 0 || s == 10) return;
+        int s = DM.menu("Matrix Op", items, 17);
+        if (s < 0 || s == 16) return;
         if (G.matAr == 0 || G.matAc == 0) {
             DM.notify("Edit Matrix A first", C_WARN);
             return;
@@ -4691,8 +6958,74 @@ private:
             } break;
             case 8: { pack(A, G.matA, G.matAr, G.matAc); showMat("Matrix A", A, G.matAr, G.matAc); } break;
             case 9: { pack(B, G.matB, G.matBr, G.matBc); showMat("Matrix B", B, G.matBr, G.matBc); } break;
+            case 10: case 11: case 12: case 13: case 14: case 15: {
+                matOpsLA(s, A, R);
+            } break;
         }
     }
+
+    void matOpsLA(int s, double* A, double* R) {
+        int n = G.matAr;
+        if (G.matAr != G.matAc) { DM.notify("Square only", C_ERR); return; }
+        for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) A[i*n+j] = G.matA[i*MAT_MAX+j];
+        if (s == 10) { showScalar("trace A", Mat::trace(A, n)); return; }
+        if (s == 11) {
+            char b[8] = "2";
+            if (!DM.inputLine("Power n (int):", b, sizeof(b))) return;
+            int p = atoi(b);
+            if (p < -64 || p > 64) { DM.notify("Range", C_ERR); return; }
+            if (!Mat::matPow(A, n, p, R)) { DM.notify("Singular", C_ERR); return; }
+            showMat("A^n", R, n, n); return;
+        }
+        if (s == 12) {
+            double L[100], U[100]; int pm[MAT_MAX]; double pv[MAT_MAX];
+            if (!Mat::luDecomp(A, n, L, U, pm)) { DM.notify("Singular", C_ERR); return; }
+            showMat("L", L, n, n); showMat("U", U, n, n);
+            for (int i = 0; i < n; i++) pv[i] = pm[i] + 1;
+            showVec("P (row perm)", pv, n); return;
+        }
+        if (s == 13) {
+            double Q[100];
+            if (!Mat::qrDecomp(A, n, Q, R)) { DM.notify("Rank deficient", C_ERR); return; }
+            showMat("Q", Q, n, n); showMat("R", R, n, n); return;
+        }
+        if (s == 14) {
+            double c[MAT_MAX+1];
+            Mat::charPoly(A, n, c);
+            auto& d = M5Cardputer.Display;
+            d.fillScreen(C_BG); DM.header("charPoly: sum c[k] l^k"); DM.footer("","","ESC:back");
+            d.setTextColor(C_OK, C_BG);
+            for (int k = n; k >= 0 && HDR_H + (n-k)*12 < LCD_H - FTR_H - 4; k--) {
+                char l[40], vs[24]; formatNum(c[k], vs, sizeof(vs));
+                snprintf(l, sizeof(l), "c[%d] = %s", k, vs);
+                d.drawString(l, 4, HDR_H + 4 + (n-k)*12);
+            }
+            DM.waitEsc(); return;
+        }
+        double er[MAT_MAX] = {0}, ei[MAT_MAX] = {0}, v[MAT_MAX];
+        Mat::qrEig(A, n, er, ei);
+        int shown = 0;
+        for (int i = 0; i < n; i++) {
+            bool dup = false;
+            for (int j = 0; j < i; j++) if (fabs(er[j]-er[i]) < 1e-7 && fabs(ei[j]-ei[i]) < 1e-7) dup = true;
+            if (dup) continue;
+            if (fabs(ei[i]) > 1e-9) {
+                double vI[MAT_MAX];
+                if (!Mat::eigVecC(A, n, er[i], ei[i], v, vI)) continue;
+                char t[32]; snprintf(t, sizeof(t), "Re v (l=%g+%gi)", er[i], ei[i]);
+                showVec(t, v, n);
+                char t2[32]; snprintf(t2, sizeof(t2), "Im v (l=%g+%gi)", er[i], ei[i]);
+                showVec(t2, vI, n);
+                shown++;
+            } else {
+                if (!Mat::eigVec(A, n, er[i], v)) continue;
+                char t[32]; snprintf(t, sizeof(t), "v (l=%g)", er[i]);
+                showVec(t, v, n); shown++;
+            }
+        }
+        if (!shown) DM.notify("No eigvec", C_WARN);
+    }
+
     void showMat(const char* title, double* M, int r, int c) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(title); DM.footer("","","ESC:back");
@@ -4707,6 +7040,7 @@ private:
         }
         DM.waitEsc();
     }
+
     void showVec(const char* title, double* V, int n) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(title); DM.footer("","","ESC:back");
@@ -4718,6 +7052,7 @@ private:
         }
         DM.waitEsc();
     }
+
     void showScalar(const char* title, double v) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(title); DM.footer("Y:Ans","","ESC:back");
@@ -4741,6 +7076,7 @@ public:
             "Cylinder","Cone","Frustum","Pyramid","Tetrahedron","Octahedron",
             "Dodecahedron","Icosahedron","Torus","Back"
         };
+        for (;;) {
         int s = DM.menu("Geometry (27)", items, 28);
         if (s < 0 || s == 27) return;
         switch (s) {
@@ -4772,6 +7108,7 @@ public:
             case 25: icosahedron();   break;
             case 26: torus();         break;
         }
+        }
     }
 private:
     double askD(const char* p, const char* def) {
@@ -4779,6 +7116,7 @@ private:
         if (!DM.inputLine(p, b, sizeof(b))) return NAN;
         return atof(b);
     }
+
     void show2(const char* title, const char* l1, double v1, const char* l2, double v2) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(title); DM.footer("Y:Ans","","ESC:back");
@@ -4791,6 +7129,7 @@ private:
         G.ans = v1; G.ansComplex = false;
         DM.waitEsc();
     }
+
     void show3(const char* t, const char* l1, double v1, const char* l2, double v2,
                               const char* l3, double v3) {
         auto& d = M5Cardputer.Display;
@@ -4803,6 +7142,7 @@ private:
         G.ans = v1; G.ansComplex = false;
         DM.waitEsc();
     }
+
     void triangleSSS() { double a=askD("a:","3"),b=askD("b:","4"),c=askD("c:","5"); double s=(a+b+c)/2;
         show2("Triangle SSS","Area",sqrt(s*(s-a)*(s-b)*(s-c)),"Perim",a+b+c); }
     void triangleBH() { double b=askD("base:","10"),h=askD("height:","5"); show2("Triangle BH","Area",0.5*b*h,"(b*h/2)",0); }
@@ -4835,6 +7175,7 @@ private:
         for (int i=0;i<n;i++){int j=(i+1)%n; A+=X[i]*Y[j]-X[j]*Y[i]; P+=hypot(X[j]-X[i],Y[j]-Y[i]);}
         show2("Polygon","Area",fabs(A)/2,"Perim",P);
     }
+
     void regularPoly() { double n=askD("n sides:","6"),r=askD("apothem:","3"); double s=2*r*tan(M_PI/n);
         show3("Regular polygon","Area",0.5*n*s*r,"Side",s,"Perim",n*s); }
     void cube() { double a=askD("side:","3"); show3("Cube","Vol",a*a*a,"Surf",6*a*a,"Diag",a*sqrt(3)); }
@@ -4864,7 +7205,6 @@ private:
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 12 / 20 ─ 確率シミュレーション / 素因数分解 / 拡張ツール統合    ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class ProbSim {
 public:
     void run() {
@@ -4872,6 +7212,7 @@ public:
             "Coin flip","Dice roll","Gacha (n out of m)","Random integer",
             "Random real","Normal random","Exponential","Birthday paradox","Back"
         };
+        for (;;) {
         int s = DM.menu("Probability Sim", items, 9);
         if (s < 0 || s == 8) return;
         switch (s) {
@@ -4884,6 +7225,7 @@ public:
             case 6: randExp();   break;
             case 7: birthday();  break;
         }
+        }
     }
 private:
     double rnd() { return ((double)esp_random() / 4294967296.0); }
@@ -4892,9 +7234,10 @@ private:
         double u2 = (esp_random() + 1.0) / 4294967297.0;
         return mu + sd * sqrt(-2*log(u1)) * cos(2*M_PI*u2);
     }
+
     void coin() {
         char b[8]="1000"; if (!DM.inputLine("trials:",b,sizeof(b))) return;
-        int n=atoi(b); int h=0;
+        int n=atoi(b); if (n < 1 || n > 100000) { DM.notify("trials 1..100000", C_ERR); return; } int h=0;
         for (int i=0;i<n;i++) if (rnd()<0.5) h++;
         if (G.statCapacity>0 && G.stat[0].data){ G.stat[0].data[0]=h; G.stat[0].data[1]=n-h; G.stat[0].count=2; }
         auto& d=M5Cardputer.Display;
@@ -4910,12 +7253,15 @@ private:
         d.fillRect(120,HDR_H+36,barH-hx,8,C_ACC2);
         DM.waitEsc();
     }
+
     void dice() {
         char b[8]="1000"; if (!DM.inputLine("trials:",b,sizeof(b))) return;
         char fb[8]="6";   if (!DM.inputLine("faces:",fb,sizeof(fb))) return;
         int n=atoi(b), faces=atoi(fb);
         if (faces<2||faces>100){DM.notify("2..100",C_ERR);return;}
+        if (n < 1 || n > 100000) { DM.notify("trials 1..100000", C_ERR); return; }
         int* hist=(int*)calloc(faces,sizeof(int));
+        if (!hist) { DM.notify("malloc fail", C_ERR); return; }
         for (int i=0;i<n;i++) hist[(int)(rnd()*faces)]++;
         if (G.statCapacity>=faces){ for (int i=0;i<faces;i++) G.stat[0].data[i]=hist[i]; G.stat[0].count=faces; }
         auto& d=M5Cardputer.Display;
@@ -4931,11 +7277,14 @@ private:
         }
         free(hist); DM.waitEsc();
     }
+
     void gacha() {
         char b[16]="0.05"; if (!DM.inputLine("p (rare):",b,sizeof(b))) return;
         double p=atof(b);
+        if (p <= 0 || p > 1) { DM.notify("0<p<=1", C_ERR); return; }
         char tb[16]="100"; if (!DM.inputLine("trials:",tb,sizeof(tb))) return;
         int n=atoi(tb);
+        if (n < 1 || n > 10000) { DM.notify("trials 1..10000", C_ERR); return; }
         int total_pulls=0,hit=0;
         for (int t=0;t<n;t++){ int pulls=0; while (true){ pulls++; if (rnd()<p){ total_pulls+=pulls; hit++; break;} if (pulls>100000) break; } }
         double avg=(double)total_pulls/hit;
@@ -4949,6 +7298,7 @@ private:
         snprintf(l,sizeof(l),"Theory 1/p = %.2f",1.0/p);      d.setTextColor(C_DIM,C_BG); d.drawString(l,4,HDR_H+48);
         DM.waitEsc();
     }
+
     void randInt() {
         char a[16]="1",c[16]="100";
         if (!DM.inputLine("min:",a,sizeof(a))) return;
@@ -4959,6 +7309,7 @@ private:
         DM.notify(vs,C_OK,1500);
         G.ans=(double)v; G.ansComplex=false;
     }
+
     void randReal() {
         char a[16]="0",c[16]="1";
         if (!DM.inputLine("min:",a,sizeof(a))) return;
@@ -4968,6 +7319,7 @@ private:
         DM.notify(vs,C_OK,1500);
         G.ans=v; G.ansComplex=false;
     }
+
     void randNorm() {
         char m[16]="0",s[16]="1";
         if (!DM.inputLine("mu:",m,sizeof(m))) return;
@@ -4977,6 +7329,7 @@ private:
         DM.notify(vs,C_OK,1500);
         G.ans=v; G.ansComplex=false;
     }
+
     void randExp() {
         char b[16]="1"; if (!DM.inputLine("lambda:",b,sizeof(b))) return;
         double l=atof(b);
@@ -4985,11 +7338,13 @@ private:
         DM.notify(vs,C_OK,1500);
         G.ans=v; G.ansComplex=false;
     }
+
     void birthday() {
         char b[8]="23"; if (!DM.inputLine("# people:",b,sizeof(b))) return;
         int n=atoi(b);
         char tb[8]="10000"; if (!DM.inputLine("trials:",tb,sizeof(tb))) return;
         int trials=atoi(tb);
+        if (trials < 1 || trials > 100000) { DM.notify("trials 1..100000", C_ERR); return; }
         int collisions=0; bool used[366];
         for (int t=0;t<trials;t++){ for (int i=0;i<366;i++) used[i]=false; bool col=false;
             for (int i=0;i<n;i++){ int day=(int)(rnd()*365); if (used[day]){col=true;break;} used[day]=true; }
@@ -5011,7 +7366,11 @@ private:
 class PrimeFactor {
 public:
     void run() {
-        char b[24]="360"; if (!DM.inputLine("Number:",b,sizeof(b))) return;
+        for (;;) {
+        const char* items[] = {"Factorize", "Back"};
+        int s = DM.menu("Prime Factorize", items, 2);
+        if (s < 0 || s == 1) return;
+        char b[24]="360"; if (!DM.inputLine("Number:",b,sizeof(b))) continue;
         long long n=(long long)atof(b);
         if (n<2){DM.notify("Need n>=2",C_ERR);return;}
         long long N=(n<0)?-n:n;
@@ -5035,6 +7394,312 @@ public:
         d.setTextColor(C_OK,C_BG);
         DM.drawWrapped(buf,4,HDR_H+22,LCD_W-8,C_OK);
         DM.waitEsc();
+        }
+    }
+};
+
+class DateCalc {
+public:
+    void run() {
+        const char* items[] = {
+            "Date difference (days)","Add/subtract days","Day of week",
+            "Leap year check","Day of year","Back"
+        };
+        for (;;) {
+        int s = DM.menu("Date Calculator", items, 6);
+        if (s < 0 || s == 5) return;
+        switch (s) {
+            case 0: dateDiff(); break;
+            case 1: dateAdd();  break;
+            case 2: dayOfWeek(); break;
+            case 3: leapYear(); break;
+            case 4: dayOfYear(); break;
+        }
+        }
+    }
+private:
+    static bool isLeap(int y) { return (y%4==0 && y%100!=0) || (y%400==0); }
+    static int daysInMonth(int y, int m) {
+        static const int d[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+        if (m==2 && isLeap(y)) return 29;
+        return d[m-1];
+    }
+
+    static long toJD(int y, int m, int d) {
+        if (m <= 2) { y--; m += 12; }
+        int A = y / 100;
+        int B = 2 - A + A/4;
+        return (long)(365.25*(y+4716)) + (int)(30.6001*(m+1)) + d + B - 1524;
+    }
+
+    static void fromJD(long jd, int& y, int& m, int& d) {
+        long a = jd + 32044;
+        long b = (4*a + 3) / 146097;
+        long c = a - (146097*b)/4;
+        long dd = (4*c + 3) / 1461;
+        long e = c - (1461*dd)/4;
+        long mm = (5*e + 2) / 153;
+        d = e - (153*mm + 2)/5 + 1;
+        m = mm + 3 - 12*(mm/10);
+        y = 100*b + dd - 4800 + mm/10;
+    }
+
+    bool askDate(int& y, int& m, int& d) {
+        char b[16];
+        snprintf(b, sizeof(b), "%d", y);
+        if (!DM.inputLine("Year:", b, sizeof(b))) return false; y = atoi(b);
+        snprintf(b, sizeof(b), "%d", m);
+        if (!DM.inputLine("Month:", b, sizeof(b))) return false; m = atoi(b);
+        snprintf(b, sizeof(b), "%d", d);
+        if (!DM.inputLine("Day:", b, sizeof(b))) return false; d = atoi(b);
+        if (m < 1 || m > 12 || d < 1 || d > daysInMonth(y, m)) return false;
+        return true;
+    }
+
+    void dateDiff() {
+        int y1=2024,m1=1,d1=1, y2=2024,m2=12,d2=31;
+        if (!askDate(y1,m1,d1)) return;
+        if (!askDate(y2,m2,d2)) return;
+        long jd1 = toJD(y1,m1,d1);
+        long jd2 = toJD(y2,m2,d2);
+        long diff = jd2 - jd1;
+        auto& disp = M5Cardputer.Display;
+        disp.fillScreen(C_BG); DM.header("Date Difference"); DM.footer("","","ESC:back");
+        char l[48];
+        snprintf(l,sizeof(l),"%04d-%02d-%02d -> %04d-%02d-%02d", y1,m1,d1, y2,m2,d2);
+        disp.setTextColor(C_FG,C_BG); disp.drawString(l,4,HDR_H+4);
+        disp.setTextColor(C_OK,C_BG); disp.setTextSize(2);
+        snprintf(l,sizeof(l),"Days = %ld", diff);
+        disp.drawString(l,4,HDR_H+24); disp.setTextSize(1);
+        snprintf(l,sizeof(l),"Weeks = %.2f", diff/7.0);
+        disp.setTextColor(C_FG,C_BG); disp.drawString(l,4,HDR_H+50);
+        G.ans = (double)diff;
+        DM.waitEsc();
+    }
+
+    void dateAdd() {
+        int y=2024,m=1,d=1;
+        if (!askDate(y,m,d)) return;
+        char b[16]="30";
+        if (!DM.inputLine("Days (+/-):", b, sizeof(b))) return;
+        long delta = atol(b);
+        long jd = toJD(y,m,d) + delta;
+        int y2,m2,d2;
+        fromJD(jd, y2,m2,d2);
+        auto& disp = M5Cardputer.Display;
+        disp.fillScreen(C_BG); DM.header("Date Add"); DM.footer("","","ESC:back");
+        char l[40];
+        snprintf(l,sizeof(l),"%04d-%02d-%02d %+ld days", y,m,d, delta);
+        disp.setTextColor(C_FG,C_BG); disp.drawString(l,4,HDR_H+4);
+        disp.setTextColor(C_OK,C_BG); disp.setTextSize(2);
+        snprintf(l,sizeof(l),"%04d-%02d-%02d", y2,m2,d2);
+        disp.drawString(l,4,HDR_H+24); disp.setTextSize(1);
+        const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+        int w = (int)((jd + 1) % 7);
+        disp.setTextColor(C_FG,C_BG);
+        snprintf(l,sizeof(l),"Day of week: %s", wd[w]);
+        disp.drawString(l,4,HDR_H+50);
+        DM.waitEsc();
+    }
+
+    void dayOfWeek() {
+        int y=2024,m=1,d=1;
+        if (!askDate(y,m,d)) return;
+        long jd = toJD(y,m,d);
+        const char* wd[] = {"Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"};
+        int w = (int)((jd + 1) % 7);
+        if (w < 0) w += 7;
+        char m2[48]; snprintf(m2, sizeof(m2), "%04d-%02d-%02d: %s", y,m,d, wd[w]);
+        DM.notify(m2, C_OK, 1500);
+    }
+
+    void leapYear() {
+        char b[8]="2024";
+        if (!DM.inputLine("Year:", b, sizeof(b))) return;
+        int y = atoi(b);
+        bool leap = isLeap(y);
+        char m[32]; snprintf(m, sizeof(m), "%d %s leap year", y, leap?"is":"is NOT");
+        DM.notify(m, leap?C_OK:C_DIM, 1500);
+    }
+
+    void dayOfYear() {
+        int y=2024,m=1,d=1;
+        if (!askDate(y,m,d)) return;
+        int doy = 0;
+        for (int mm=1; mm<m; mm++) doy += daysInMonth(y, mm);
+        doy += d;
+        char m2[32]; snprintf(m2, sizeof(m2), "Day of year: %d", doy);
+        DM.notify(m2, C_OK, 1500);
+    }
+};
+
+class FinanceCalc {
+public:
+    void run() {
+        const char* items[] = {
+            "Compound interest","Simple interest","Loan payment (amortized)",
+            "NPV (Net Present Value)","IRR (Internal Rate of Return)","Future value of annuity","Back"
+        };
+        for (;;) {
+        int s = DM.menu("Finance", items, 7);
+        if (s < 0 || s == 6) return;
+        switch (s) {
+            case 0: compound(); break;
+            case 1: simple();   break;
+            case 2: loanPay();  break;
+            case 3: npv();      break;
+            case 4: irr();      break;
+            case 5: annuity();  break;
+        }
+        }
+    }
+private:
+    void compound() {
+        char b[24];
+        strcpy(b,"1000"); if (!DM.inputLine("PV:", b, sizeof(b))) return; double pv = atof(b);
+        strcpy(b,"0.05"); if (!DM.inputLine("Annual rate (r):", b, sizeof(b))) return; double r = atof(b);
+        strcpy(b,"10"); if (!DM.inputLine("Years (n):", b, sizeof(b))) return; double n = atof(b);
+        strcpy(b,"1"); if (!DM.inputLine("Compounds/year:", b, sizeof(b))) return; int m = atoi(b);
+        if (m < 1) m = 1;
+        double fv = pv * pow(1 + r/m, n*m);
+        double interest = fv - pv;
+        show2("Compound", "FV", fv, "Interest", interest);
+    }
+
+    void simple() {
+        char b[24];
+        strcpy(b,"1000"); if (!DM.inputLine("PV:", b, sizeof(b))) return; double pv = atof(b);
+        strcpy(b,"0.05"); if (!DM.inputLine("Annual rate:", b, sizeof(b))) return; double r = atof(b);
+        strcpy(b,"10"); if (!DM.inputLine("Years:", b, sizeof(b))) return; double n = atof(b);
+        double fv = pv * (1 + r*n);
+        double interest = fv - pv;
+        show2("Simple", "FV", fv, "Interest", interest);
+    }
+
+    void loanPay() {
+        char b[24];
+        strcpy(b,"1000000"); if (!DM.inputLine("Loan amount:", b, sizeof(b))) return; double P = atof(b);
+        strcpy(b,"0.03"); if (!DM.inputLine("Annual rate:", b, sizeof(b))) return; double r = atof(b);
+        strcpy(b,"12"); if (!DM.inputLine("Payments/year:", b, sizeof(b))) return; int m = atoi(b);
+        strcpy(b,"10"); if (!DM.inputLine("Years:", b, sizeof(b))) return; double years = atof(b);
+        if (m < 1) m = 1;
+        double per = r/m;
+        double n = years * m;
+        if (n < 1e-9) { DM.notify("Years must be > 0", C_ERR); return; }
+        double M;
+        if (per == 0) M = P / n;
+        else M = P * per * pow(1+per, n) / (pow(1+per, n) - 1);
+        double total = M * n;
+        double interest = total - P;
+        show3("Loan", "Payment", M, "Total", total, "Interest", interest);
+    }
+
+    void npv() {
+        char b[24];
+        strcpy(b,"0.1"); if (!DM.inputLine("Discount rate:", b, sizeof(b))) return; double r = atof(b);
+        strcpy(b,"5"); if (!DM.inputLine("# cash flows:", b, sizeof(b))) return; int N = atoi(b);
+        if (N < 1 || N > 30) { DM.notify("1..30", C_ERR); return; }
+        double npv = 0;
+        for (int i = 0; i < N; i++) {
+            char p[24]; snprintf(p, sizeof(p), "CF%d:", i+1);
+            char c[24]="0"; if (!DM.inputLine(p, c, sizeof(c))) return;
+            npv += atof(c) / pow(1+r, i+1);
+        }
+        show1("NPV", npv);
+    }
+
+    void irr() {
+        char b[24];
+        strcpy(b,"5"); if (!DM.inputLine("# cash flows:", b, sizeof(b))) return; int N = atoi(b);
+        if (N < 2 || N > 30) { DM.notify("2..30", C_ERR); return; }
+        double cf[30];
+        for (int i = 0; i < N; i++) {
+            char p[24]; snprintf(p, sizeof(p), "CF%d:", i);
+            char c[24]="0"; if (!DM.inputLine(p, c, sizeof(c))) return;
+            cf[i] = atof(c);
+        }
+        auto npvAt = [&](double r) {
+            double v = 0;
+            for (int i = 0; i < N; i++) v += cf[i] / pow(1+r, i);
+            return v;
+        };
+        double r = 0.1;
+        for (int it = 0; it < 100; it++) {
+            double f = npvAt(r);
+            double h = 1e-6;
+            double d = (npvAt(r+h) - npvAt(r-h)) / (2*h);
+            if (fabs(d) < 1e-12) break;
+            double rn = r - f/d;
+            if (fabs(rn - r) < 1e-10) { r = rn; break; }
+            r = rn;
+        }
+        show1("IRR", r);
+    }
+
+    void annuity() {
+        char b[24];
+        strcpy(b,"10000"); if (!DM.inputLine("PMT:", b, sizeof(b))) return; double pmt = atof(b);
+        strcpy(b,"0.05"); if (!DM.inputLine("Annual rate:", b, sizeof(b))) return; double r = atof(b);
+        strcpy(b,"12"); if (!DM.inputLine("Payments/year:", b, sizeof(b))) return; int m = atoi(b);
+        strcpy(b,"10"); if (!DM.inputLine("Years:", b, sizeof(b))) return; double y = atof(b);
+        if (m < 1) m = 1;
+        double per = r/m;
+        double n = y*m;
+        double fv;
+        if (per == 0) fv = pmt * n;
+        else fv = pmt * (pow(1+per,n) - 1) / per;
+        show1("Annuity FV", fv);
+    }
+
+    void show1(const char* t, double v) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans","S:BMP","ESC:back");
+        char vs[40]; formatNum(v, vs, sizeof(vs));
+        d.setTextColor(C_OK, C_BG); d.setTextSize(2);
+        d.drawString(vs, 4, HDR_H+12); d.setTextSize(1);
+        G.ans = v; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans",C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("fin");
+        }
+    }
+
+    void show2(const char* t, const char* l1, double v1, const char* l2, double v2) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans","S:BMP","ESC:back");
+        char l[48]; char vs[32];
+        d.setTextColor(C_OK,C_BG);
+        formatNum(v1,vs,sizeof(vs)); snprintf(l,sizeof(l),"%s = %s",l1,vs); d.drawString(l,4,HDR_H+8);
+        formatNum(v2,vs,sizeof(vs)); snprintf(l,sizeof(l),"%s = %s",l2,vs); d.drawString(l,4,HDR_H+24);
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans",C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("fin");
+        }
+    }
+
+    void show3(const char* t, const char* l1, double v1, const char* l2, double v2, const char* l3, double v3) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans","S:BMP","ESC:back");
+        char l[48]; char vs[32];
+        d.setTextColor(C_OK,C_BG);
+        formatNum(v1,vs,sizeof(vs)); snprintf(l,sizeof(l),"%s = %s",l1,vs); d.drawString(l,4,HDR_H+4);
+        formatNum(v2,vs,sizeof(vs)); snprintf(l,sizeof(l),"%s = %s",l2,vs); d.drawString(l,4,HDR_H+18);
+        formatNum(v3,vs,sizeof(vs)); snprintf(l,sizeof(l),"%s = %s",l3,vs); d.drawString(l,4,HDR_H+32);
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans",C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("fin");
+        }
     }
 };
 
@@ -5044,15 +7709,17 @@ VecMatCalc   gVecMat;
 GeomCalc     gGeom;
 ProbSim      gProb;
 PrimeFactor  gPrime;
-
+DateCalc     gDate;
+FinanceCalc  gFin;
 void CalculatorCore::extToolMenu(char* input, int& cur) {
     while (true) {
         const char* items[] = {
             "Equation Solver","Numerical Analysis (d/dx, integ)","Vector / Matrix",
-            "Geometry (27 shapes)","Probability Sim","Prime Factorize","Back"
+            "Geometry (27 shapes)","Probability Sim","Prime Factorize",
+            "Date Calculator","Finance","Back"
         };
-        int s = DM.menu("Tools", items, 7);
-        if (s < 0 || s == 6) return;
+        int s = DM.menu("Tools", items, 9);
+        if (s < 0 || s == 8) return;
         switch (s) {
             case 0: gEqSolver.run(); break;
             case 1: gNumMenu.run();  break;
@@ -5060,6 +7727,8 @@ void CalculatorCore::extToolMenu(char* input, int& cur) {
             case 3: gGeom.run();     break;
             case 4: gProb.run();     break;
             case 5: gPrime.run();    break;
+            case 6: gDate.run();     break;
+            case 7: gFin.run();      break;
         }
     }
 }
@@ -5067,7 +7736,6 @@ void CalculatorCore::extToolMenu(char* input, int& cur) {
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 13 / 20 ─ Stat モード コア (記述統計・CSV I/O)                  ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class StatCore {
 public:
     void run() {
@@ -5076,31 +7744,37 @@ public:
         }
         while (true) {
             const char* items[] = {
-                "List Editor","Variable Scale","Descriptive Statistics",
+                "Quick Stats & Graphs","List Editor","Variable Scale","Descriptive Statistics",
                 "Weighted/Geo/Harm/Trim Mean","Frequency Distribution","Z-Scores",
-                "CSV Load (SD)","CSV Save (SD)","Clear All Lists","List -> next module","Back"
+                "CSV Load (SD)","CSV Save (SD)","Clear All Lists","List -> next module",
+                "Category Freq","Freq-List Stats","Back"
             };
-            int s = DM.menu("Statistics", items, 11);
-            if (s < 0 || s == 10) return;
+            int s = DM.menu("Statistics", items, 14);
+            if (s < 0 || s == 13) return;
             switch (s) {
-                case 0: editList();        break;
-                case 1: scaleMenu();       break;
-                case 2: descriptive();     break;
-                case 3: specialMeans();    break;
-                case 4: freqDist();        break;
-                case 5: zScores();         break;
-                case 6: csvLoad();         break;
-                case 7: csvSave();         break;
-                case 8: clearAll();        break;
-                case 9: passToNextHint();  break;
+                case 0: quickStats();      break;
+                case 1: editList();        break;
+                case 2: scaleMenu();       break;
+                case 3: descriptive();     break;
+                case 4: specialMeans();    break;
+                case 5: freqDist();        break;
+                case 6: zScores();         break;
+                case 7: csvLoad();         break;
+                case 8: csvSave();         break;
+                case 9: clearAll();        break;
+                case 10: passToNextHint(); break;
+                case 11: categoryFreq();   break;
+                case 12: freqListStats();  break;
             }
         }
     }
 private:
     int pickList(const char* title) {
         char** labels = (char**)malloc(STAT_LISTS * sizeof(char*));
+        if (!labels) return -1;
         for (int i = 0; i < STAT_LISTS; i++) {
             labels[i] = (char*)malloc(20);
+            if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return -1; }
             snprintf(labels[i], 20, "%s (n=%d)", G.stat[i].name, G.stat[i].count);
         }
         const char** clabels = (const char**)labels;
@@ -5109,11 +7783,13 @@ private:
         free(labels);
         return s;
     }
+
     void editList() {
         int li = pickList("Edit which list?");
         if (li < 0) return;
         editListIdx(li);
     }
+
     void editListIdx(int li) {
         auto& d = M5Cardputer.Display;
         int sel = 0, top = 0;
@@ -5157,14 +7833,15 @@ private:
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 if (st.fn && IS_UP)   { if (sel > 0) sel--; break; }
-                if (st.fn && IS_DOWN) { if (sel <= n) sel++; break; }
+                if (st.fn && IS_DOWN) { if (sel < n) sel++; break; }
                 if (st.enter) {
                     snprintf(buf, sizeof(buf), "%g", (sel < n) ? G.stat[li].data[sel] : 0.0);
                     if (DM.inputLine("Value:", buf, sizeof(buf))) {
                         char* end; double v = strtod(buf, &end);
-                        if (end != buf) {
+                        if (end != buf && (isnan(v) || isinf(v))) { DM.notify("NaN/Inf rejected", C_ERR); }
+                        else if (end != buf) {
                             if (sel < n) G.stat[li].data[sel] = v;
                             else if (n < G.statCapacity) { G.stat[li].data[n] = v; G.stat[li].count = n + 1; }
                         }
@@ -5197,12 +7874,14 @@ private:
             }
         }
     }
+
     void sortList(int li) {
         int n = G.stat[li].count;
         double* a = G.stat[li].data;
         for (int i = 1; i < n; i++) { double k = a[i]; int j = i - 1;
             while (j >= 0 && a[j] > k) { a[j+1] = a[j]; j--; } a[j+1] = k; }
     }
+
     void scaleMenu() {
         int li = pickList("Scale: which list?"); if (li < 0) return;
         const char* items[] = {"Ratio (比例)","Interval (間隔)","Ordinal (順序)","Nominal (名義)","Back"};
@@ -5211,6 +7890,7 @@ private:
         G.stat[li].scale = (VarScale)s;
         DM.notify("Set", C_OK);
     }
+
     void descriptive() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count;
@@ -5262,6 +7942,115 @@ private:
         showStatPage(li, n, sum, sum2, mean, varS, sdS, varP, sdP, SE, CV,
                      mn, mx, q1, med, q3, iqr, skew, kurt, mode, modeCount);
     }
+
+    void quickStats() {
+        int li = pickList("List?"); if (li < 0) return;
+        int n = G.stat[li].count;
+        if (n < 1) { DM.notify("Empty", C_ERR); return; }
+        double* x = G.stat[li].data;
+        KSum ksum, ksq;
+        double mn = x[0], mx = x[0];
+        for (int i = 0; i < n; i++) {
+            ksum.add(x[i]); ksq.add(x[i]*x[i]);
+            if (x[i] < mn) mn = x[i];
+            if (x[i] > mx) mx = x[i];
+        }
+        double sum = ksum.get(), sum2 = ksq.get();
+        double mean = sum / n;
+        KSum kss, km3, km4;
+        for (int i = 0; i < n; i++) {
+            double d = x[i] - mean;
+            kss.add(d*d); km3.add(d*d*d); km4.add(d*d*d*d);
+        }
+        double SS = kss.get();
+        double varS = (n > 1) ? SS / (n-1) : 0;
+        double varP = SS / n;
+        double sdS = sqrt(varS), sdP = sqrt(varP);
+        double SE = sdS / sqrt((double)n);
+        double CV = (mean != 0) ? sdS / fabs(mean) * 100 : 0;
+        double m3 = km3.get() / n, m4 = km4.get() / n;
+        double skew = (sdP > 0) ? m3 / (sdP*sdP*sdP) : 0;
+        double kurt = (sdP > 0) ? m4 / (sdP*sdP*sdP*sdP) - 3.0 : 0;
+        double* tmp = (double*)malloc(n * sizeof(double));
+        if (!tmp) { DM.notify("malloc fail", C_ERR); return; }
+        memcpy(tmp, x, n * sizeof(double));
+        for (int i = 1; i < n; i++) { double k = tmp[i]; int j = i - 1;
+            while (j >= 0 && tmp[j] > k) { tmp[j+1] = tmp[j]; j--; } tmp[j+1] = k; }
+        auto pct = [&](double p) -> double {
+            if (n == 1) return tmp[0];
+            double idx = p * (n - 1);
+            int lo = (int)floor(idx);
+            double f = idx - lo;
+            return tmp[lo] + f * (tmp[(lo+1<n)?lo+1:lo] - tmp[lo]);
+        };
+        double q1 = pct(0.25), med = pct(0.5), q3 = pct(0.75);
+        double iqr = q3 - q1;
+        double mode = tmp[0]; int modeCount = 1, curCount = 1;
+        for (int i = 1; i < n; i++) {
+            if (tmp[i] == tmp[i-1]) { curCount++; if (curCount > modeCount) { modeCount = curCount; mode = tmp[i]; } }
+            else curCount = 1;
+        }
+        free(tmp);
+        auto& d = M5Cardputer.Display;
+        auto renderQS = [&](int pg) {
+            d.fillScreen(C_BG);
+            char th[28]; snprintf(th, sizeof(th), "Quick %s (p%d/2)", G.stat[li].name, pg+1);
+            DM.header(th);
+            DM.footer("S:save  H/B/C/Q/E/K", "L/R:page G:graphs", "ESC:back");
+            d.setTextColor(C_FG, C_BG);
+            char l[60];
+            int y = HDR_H + 2;
+            if (pg == 0) {
+                snprintf(l,sizeof(l),"n = %d", n);                    d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"mean = %.6g", mean);            d.setTextColor(C_OK,C_BG); d.drawString(l,4,y); y+=11; d.setTextColor(C_FG,C_BG);
+                snprintf(l,sizeof(l),"med  = %.6g", med);             d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"mode = %.6g (x%d)", mode, modeCount); d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"min  = %.6g", mn);              d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"max  = %.6g", mx);              d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"sd   = %.6g", sdS);             d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"var  = %.6g", varS);            d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"range= %.6g", mx-mn);           d.drawString(l,4,y); y+=11;
+            } else {
+                snprintf(l,sizeof(l),"skew = %.4g", skew);            d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"kurt = %.4g", kurt);            d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"Q1   = %.5g", q1);              d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"Q3   = %.5g", q3);              d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"IQR  = %.5g", iqr);             d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"SE   = %.5g", SE);              d.drawString(l,4,y); y+=11;
+                snprintf(l,sizeof(l),"CV   = %.3f%%", CV);            d.drawString(l,4,y); y+=11;
+            }
+        };
+        auto saveAllQS = [&]() {
+            unsigned long t = millis();
+            for (int pp = 0; pp < 2; pp++) {
+                renderQS(pp);
+                char path[40]; snprintf(path, sizeof(path), "/quick_%lu_p%d.bmp", t, pp+1);
+                DM.saveBMP(path);
+            }
+            char m[40]; snprintf(m, sizeof(m), "Saved 2 pages");
+            DM.notify(m, C_OK, 1200);
+        };
+        int page = 0;
+        while (true) {
+            renderQS(page);
+            while (true) {
+                if (!DM.pollKeys()) { delay(15); continue; }
+                auto st = M5Cardputer.Keyboard.keysState();
+                if (IS_ESC) return;
+                if (st.fn && IS_LEFT)  { if (page > 0) { page--; break; } }
+                if (st.fn && IS_RIGHT) { if (page < 1) { page++; break; } }
+                if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) { saveAllQS(); break; }
+                if (M5Cardputer.Keyboard.isKeyPressed('h') || M5Cardputer.Keyboard.isKeyPressed('H')) { statGraphShow(0); break; }
+                if (M5Cardputer.Keyboard.isKeyPressed('b') || M5Cardputer.Keyboard.isKeyPressed('B')) { statGraphShow(1); break; }
+                if (M5Cardputer.Keyboard.isKeyPressed('c') || M5Cardputer.Keyboard.isKeyPressed('C')) { statGraphShow(2); break; }
+                if (M5Cardputer.Keyboard.isKeyPressed('q') || M5Cardputer.Keyboard.isKeyPressed('Q')) { statGraphShow(3); break; }
+                if (M5Cardputer.Keyboard.isKeyPressed('e') || M5Cardputer.Keyboard.isKeyPressed('E')) { statGraphShow(9); break; }
+                if (M5Cardputer.Keyboard.isKeyPressed('k') || M5Cardputer.Keyboard.isKeyPressed('K')) { statGraphShow(10); break; }
+                if (M5Cardputer.Keyboard.isKeyPressed('g') || M5Cardputer.Keyboard.isKeyPressed('G')) { statGraphMenu(); break; }
+            }
+        }
+    }
+
     void showStatPage(int li, int n, double sum, double sum2, double mean,
                       double varS, double sdS, double varP, double sdP,
                       double SE, double CV, double mn, double mx,
@@ -5299,7 +8088,7 @@ private:
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 if (st.fn && IS_LEFT)  { if (page > 0) { page--; break; } }
                 if (st.fn && IS_RIGHT) { if (page < 1) { page++; break; } }
                 if (M5Cardputer.Keyboard.isKeyPressed('y') || M5Cardputer.Keyboard.isKeyPressed('Y')) {
@@ -5308,6 +8097,7 @@ private:
             }
         }
     }
+
     void specialMeans() {
         const char* items[] = {
             "Weighted mean (L1=val, L2=weight)","Geometric mean (L?)","Harmonic mean (L?)",
@@ -5344,6 +8134,7 @@ private:
             if (a < 0 || a >= 0.5) { DM.notify("0..0.5", C_ERR); return; }
             int n = G.stat[li].count;
             double* tmp = (double*)malloc(n * sizeof(double));
+            if (!tmp) { DM.notify("malloc fail", C_ERR); return; }
             memcpy(tmp, G.stat[li].data, n * sizeof(double));
             for (int i = 1; i < n; i++) { double k = tmp[i]; int j = i-1;
                 while (j >= 0 && tmp[j] > k) { tmp[j+1] = tmp[j]; j--; } tmp[j+1] = k; }
@@ -5355,6 +8146,7 @@ private:
             showOne("Trimmed mean", eff > 0 ? s / eff : 0);
         }
     }
+
     void showOne(const char* nm, double v) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(nm); DM.footer("Y:Ans","","ESC:back");
@@ -5365,6 +8157,7 @@ private:
         G.ans = v; G.ansComplex = false;
         DM.waitEsc();
     }
+
     void freqDist() {
         int li = pickList("Freq dist: list?"); if (li < 0) return;
         int n = G.stat[li].count;
@@ -5381,6 +8174,7 @@ private:
         double w = (mx - mn) / nb;
         if (w == 0) w = 1;
         int* hist = (int*)calloc(nb, sizeof(int));
+        if (!hist) { DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++) {
             int b = (int)((G.stat[li].data[i] - mn) / w);
             if (b == nb) b = nb - 1;
@@ -5406,10 +8200,111 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("hist");
         }
     }
+
+    static int dblCmp(const void* a, const void* b) {
+        double x = *(const double*)a, y = *(const double*)b;
+        return (x > y) - (x < y);
+    }
+
+    struct XF { double x, f; };
+    static int xfCmp(const void* a, const void* b) {
+        double x = ((const XF*)a)->x, y = ((const XF*)b)->x;
+        return (x > y) - (x < y);
+    }
+
+    // 度数リスト付き統計: out = {N, mean, sd(標本), sd(母), median, min, max}
+    static bool freqStats(const double* x, const double* f, int n, double* out) {
+        XF* a = (XF*)malloc(n * sizeof(XF));
+        if (!a) return false;
+        int m = 0; double N = 0, S = 0;
+        for (int i = 0; i < n; i++) {
+            if (!(f[i] > 0)) continue;
+            a[m].x = x[i]; a[m].f = f[i]; m++;
+            N += f[i]; S += f[i] * x[i];
+        }
+        if (m == 0 || N <= 0) { free(a); return false; }
+        double mean = S / N, ss = 0;
+        for (int i = 0; i < m; i++) { double d = a[i].x - mean; ss += a[i].f * d * d; }
+        qsort(a, m, sizeof(XF), xfCmp);
+        double half = N / 2, cum = 0, med = a[m-1].x;
+        for (int i = 0; i < m; i++) {
+            cum += a[i].f;
+            if (cum > half + 1e-12) { med = a[i].x; break; }
+            if (fabs(cum - half) <= 1e-12) { med = (a[i].x + a[(i+1 < m) ? i+1 : i].x) / 2; break; }
+        }
+        out[0] = N; out[1] = mean;
+        out[2] = (N > 1) ? sqrt(ss / (N - 1)) : NAN;
+        out[3] = sqrt(ss / N);
+        out[4] = med; out[5] = a[0].x; out[6] = a[m-1].x;
+        free(a);
+        return true;
+    }
+
+    void categoryFreq() {
+        int li = pickList("Category freq: list?"); if (li < 0) return;
+        int n = G.stat[li].count;
+        if (n < 1) { DM.notify("Empty", C_ERR); return; }
+        double* v = (double*)malloc(n * sizeof(double));
+        const int cap = 128;
+        double* val = (double*)malloc(cap * sizeof(double));
+        int* cnt = (int*)malloc(cap * sizeof(int));
+        if (!v || !val || !cnt) { free(v); free(val); free(cnt); DM.notify("malloc fail", C_ERR); return; }
+        memcpy(v, G.stat[li].data, n * sizeof(double));
+        qsort(v, n, sizeof(double), dblCmp);
+        int m = 0; bool trunc = false;
+        for (int i = 0; i < n; ) {
+            int j = i; while (j < n && v[j] == v[i]) j++;
+            if (m < cap) { val[m] = v[i]; cnt[m] = j - i; m++; } else trunc = true;
+            i = j;
+        }
+        free(v);
+        auto& d = M5Cardputer.Display;
+        const int rowH = 11;
+        const int rows = (LCD_H - HDR_H - FTR_H) / rowH;
+        int top = 0;
+        while (true) {
+            d.fillScreen(C_BG);
+            char th[32]; snprintf(th, sizeof(th), "Categories k=%d%s n=%d", m, trunc ? "+" : "", n);
+            DM.header(th); DM.footer("fn+;/.:scroll", "", "ESC:back");
+            for (int r = 0; r < rows && top + r < m; r++) {
+                char vs[20], l[48];
+                formatNum(val[top + r], vs, sizeof(vs));
+                snprintf(l, sizeof(l), "%s : %d (%.1f%%)", vs, cnt[top + r], 100.0 * cnt[top + r] / n);
+                d.setTextColor((r & 1) ? C_DIM : C_FG, C_BG);
+                d.drawString(l, 4, HDR_H + 2 + r * rowH);
+            }
+            while (true) {
+                if (!DM.pollKeys()) { delay(15); continue; }
+                auto st = M5Cardputer.Keyboard.keysState();
+                if (IS_ESC) { free(val); free(cnt); return; }
+                if (st.fn && IS_UP)   { if (top > 0) top--; break; }
+                if (st.fn && IS_DOWN) { if (top + rows < m) top++; break; }
+            }
+        }
+    }
+
+    void freqListStats() {
+        int xi = pickList("Data list?");      if (xi < 0) return;
+        int fi = pickList("Frequency list?"); if (fi < 0) return;
+        int n = G.stat[xi].count;
+        if (n < 1 || G.stat[fi].count != n) { DM.notify("Mismatch / empty", C_ERR); return; }
+        double o[7];
+        if (!freqStats(G.stat[xi].data, G.stat[fi].data, n, o)) { DM.notify("No freq>0", C_ERR); return; }
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Freq-List Stats"); DM.footer("","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[44];
+        snprintf(l, sizeof(l), "N = %.6g   mean = %.5g", o[0], o[1]);      d.drawString(l, 4, HDR_H + 8);
+        snprintf(l, sizeof(l), "s = %.5g   sigma = %.5g", o[2], o[3]);     d.drawString(l, 4, HDR_H + 24);
+        snprintf(l, sizeof(l), "median = %.5g", o[4]);                     d.drawString(l, 4, HDR_H + 40);
+        snprintf(l, sizeof(l), "min = %.5g   max = %.5g", o[5], o[6]);     d.drawString(l, 4, HDR_H + 56);
+        DM.waitEsc();
+    }
+
     void zScores() {
         int li = pickList("Source list?"); if (li < 0) return;
         int n = G.stat[li].count;
@@ -5426,6 +8321,7 @@ private:
         G.stat[dst].count = n;
         DM.notify("Z-scores saved", C_OK);
     }
+
     void csvLoad() {
         if (!G.sdOK) { DM.notify("No SD card", C_ERR); return; }
         char path[48] = "/data.csv";
@@ -5451,7 +8347,8 @@ private:
                 String tok = (comma < 0) ? line.substring(from) : line.substring(from, comma);
                 tok.trim();
                 if (tok.length() > 0 && G.stat[col].count < G.statCapacity) {
-                    G.stat[col].data[G.stat[col].count++] = tok.toDouble();
+                    const char* cs = tok.c_str(); char* endp; double v = strtod(cs, &endp);
+                    if (endp != cs && *endp == 0 && !isnan(v) && !isinf(v)) G.stat[col].data[G.stat[col].count++] = v;
                 }
                 if (comma < 0) break;
                 from = comma + 1; col++;
@@ -5460,6 +8357,7 @@ private:
         f.close();
         DM.notify("Loaded", C_OK);
     }
+
     void csvSave() {
         if (!G.sdOK) { DM.notify("No SD card", C_ERR); return; }
         char path[48] = "/stat.csv";
@@ -5485,29 +8383,31 @@ private:
         f.close();
         DM.notify("Saved", C_OK);
     }
+
     void clearAll() {
         if (DM.confirm("Clear all 6 lists?")) {
             for (int i = 0; i < STAT_LISTS; i++) G.stat[i].count = 0;
             DM.notify("Cleared", C_OK);
         }
     }
+
     void passToNextHint() { DM.notify("Use Regression / Tests menu", C_ACC, 1500); }
 };
 
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 14 / 20 ─ 回帰 / 検定統計                                       ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class StatRegress {
 public:
     void run() {
         const char* items[] = {
             "Linear (LSM)","Quadratic","Power","Exponential","Logarithmic",
             "Logistic (2-par logit)","Med-Med","Multiple Regression",
-            "Stepwise Selection","Predict y from x","Save residuals to L?","Back"
+            "Stepwise Selection","Predict y from x","Save residuals to L?","Linear: coef CI","Back"
         };
-        int s = DM.menu("Regression", items, 12);
-        if (s < 0 || s == 11) return;
+        for (;;) {
+        int s = DM.menu("Regression", items, 13);
+        if (s < 0 || s == 12) return;
         switch (s) {
             case 0: simple(0); break;
             case 1: simple(1); break;
@@ -5520,13 +8420,16 @@ public:
             case 8: stepwise();   break;
             case 9: predict();    break;
             case 10:saveResid();  break;
+            case 11:linearCI();   break;
+        }
         }
     }
 private:
     int pickList(const char* title) {
-        const char* items[] = {"L1","L2","L3","L4","L5","L6","L7","L8"};
+        const char* items[STAT_LISTS]; for (int _i = 0; _i < STAT_LISTS; _i++) items[_i] = statLbl(_i);
         return DM.menu(title, items, STAT_LISTS);
     }
+
     int lastType = 0;
     double lastA = 0, lastB = 0, lastC = 0;
     int lastXi = -1, lastYi = -1;
@@ -5546,6 +8449,46 @@ private:
         a  = my - b*mx;
         r2 = (Syy > 0) ? (Sxy*Sxy)/(Sxx*Syy) : 0;
     }
+
+    void linearCI() {
+        int xi = pickList("X list?"); if (xi < 0) return;
+        int yi = pickList("Y list?"); if (yi < 0) return;
+        int n = G.stat[xi].count;
+        if (n < 3 || G.stat[yi].count != n) { DM.notify("Mismatch / n<3", C_ERR); return; }
+        char b[16] = "0.95";
+        if (!DM.inputLine("Confidence:", b, sizeof(b))) return;
+        double c = atof(b);
+        if (!(c > 0 && c < 1)) { DM.notify("0<c<1", C_ERR); return; }
+        double* X = G.stat[xi].data;
+        double* Y = G.stat[yi].data;
+        double a, bs, r2;
+        linfit(X, Y, n, a, bs, r2);
+        if (isnan(bs)) { DM.notify("Sxx=0", C_ERR); return; }
+        KSum kx; for (int i = 0; i < n; i++) kx.add(X[i]);
+        double mx = kx.get() / n;
+        KSum kxx, ksse;
+        for (int i = 0; i < n; i++) {
+            double dx = X[i] - mx, e = Y[i] - (a + bs * X[i]);
+            kxx.add(dx*dx); ksse.add(e*e);
+        }
+        double Sxx = kxx.get(), sse = ksse.get();
+        double se = sqrt(sse / (n - 2));
+        double seB = se / sqrt(Sxx);
+        double seA = se * sqrt(1.0 / n + mx * mx / Sxx);
+        double t = Dist::tInv(0.5 + c / 2, n - 2);
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Linear coef CI"); DM.footer("","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[44];
+        snprintf(l, sizeof(l), "b = %.5g  SE %.3g", bs, seB);               d.drawString(l, 4, HDR_H + 6);
+        snprintf(l, sizeof(l), "%g%% [%.4g, %.4g]", c*100, bs - t*seB, bs + t*seB); d.drawString(l, 4, HDR_H + 20);
+        snprintf(l, sizeof(l), "a = %.5g  SE %.3g", a, seA);                d.drawString(l, 4, HDR_H + 38);
+        snprintf(l, sizeof(l), "%g%% [%.4g, %.4g]", c*100, a - t*seA, a + t*seA); d.drawString(l, 4, HDR_H + 52);
+        d.setTextColor(C_DIM, C_BG);
+        snprintf(l, sizeof(l), "s=%.4g df=%d t=%.3f r2=%.4f", se, n - 2, t, r2); d.drawString(l, 4, HDR_H + 70);
+        DM.waitEsc();
+    }
+
     void simple(int type) {
         int xi = pickList("X list?"); if (xi < 0) return;
         int yi = pickList("Y list?"); if (yi < 0) return;
@@ -5645,7 +8588,9 @@ private:
             snprintf(r4,sizeof(r4),"r^2 = %.6g (logit)", r2v);
         } break;
         case 6: {
+            if (n < 3) { DM.notify("Med-Med needs n>=3", C_ERR); return; }
             int* idx = (int*)malloc(n * sizeof(int));
+            if (!idx) { DM.notify("malloc fail", C_ERR); return; }
             for (int i = 0; i < n; i++) idx[i] = i;
             for (int i = 1; i < n; i++) {
                 int k = idx[i]; int j = i - 1;
@@ -5656,6 +8601,7 @@ private:
             auto med = [&](double* arr, int* ids, int from, int to) {
                 int m = to - from;
                 double* tmp = (double*)malloc(m*sizeof(double));
+                if (!tmp) return (double)NAN;
                 for (int i = 0; i < m; i++) tmp[i] = arr[ids[from+i]];
                 for (int i = 1; i < m; i++) { double k=tmp[i]; int j=i-1;
                     while (j>=0 && tmp[j]>k){ tmp[j+1]=tmp[j]; j--; } tmp[j+1]=k; }
@@ -5669,8 +8615,11 @@ private:
             double mx2 = med(X, idx, g1, g3s);
             double my2 = med(Y, idx, g1, g3s);
             free(idx);
-            bb = (my3 - my1) / (mx3 - mx1);
-            aa = ((my1 - bb*mx1) + (my2 - bb*mx2) + (my3 - bb*mx3)) / 3.0;
+            if (fabs(mx3 - mx1) < 1e-12) { bb = 0; aa = (my1 + my2 + my3) / 3.0; }
+            else {
+                bb = (my3 - my1) / (mx3 - mx1);
+                aa = ((my1 - bb*mx1) + (my2 - bb*mx2) + (my3 - bb*mx3)) / 3.0;
+            }
             double sy = 0, sst = 0, sse = 0;
             for (int i = 0; i < n; i++) sy += Y[i];
             double yMean = sy / n;
@@ -5689,6 +8638,7 @@ private:
         lastType = type; lastA = aa; lastB = bb; lastC = cc; lastXi = xi; lastYi = yi;
         showRegResult(r1, r2, r3, r4, r5);
     }
+
     void showRegResult(const char* r1, const char* r2, const char* r3, const char* r4, const char* r5) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Regression"); DM.footer("Y:a->Ans","S:save","ESC:back");
@@ -5701,14 +8651,16 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y') || M5Cardputer.Keyboard.isKeyPressed('Y')) {
                 G.ans = lastA; G.ansComplex = false; DM.notify("a -> Ans", C_OK); return;
             }
             if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("reg");
         }
     }
+
     void multiple() {
+        lastXi = -1;
         char b[8] = "2";
         if (!DM.inputLine("# predictors (1-5):", b, sizeof(b))) return;
         int k = atoi(b);
@@ -5785,7 +8737,7 @@ private:
         auto& d = M5Cardputer.Display;
         while (true) {
             d.fillScreen(C_BG);
-            char th[40]; snprintf(th, sizeof(th), "MultiReg p%d/3", page+1);
+            char th[40]; snprintf(th, sizeof(th), "MultiReg p%d/4", page+1);
             DM.header(th);
             DM.footer("L/R:page", "S:BMP", "ESC:back");
             d.setTextColor(C_FG, C_BG);
@@ -5808,7 +8760,7 @@ private:
                              i, beta[i], SE[i], tval[i], pval[i]);
                     d.drawString(l, 4, y); y += 11;
                 }
-            } else {
+            } else if (page == 2) {
                 d.drawString("VIF (multicoll.):", 4, y); y += 11;
                 for (int i = 0; i < k; i++) {
                     snprintf(l, sizeof(l), "VIF X%d = %.3g %s", i+1, VIF[i], VIF[i] > 10 ? "(HIGH!)" : "");
@@ -5816,18 +8768,34 @@ private:
                     else             d.setTextColor(C_FG, C_BG);
                     d.drawString(l, 4, y); y += 11;
                 }
+            } else {
+                double tcrit = Dist::tInv(0.975, n - p);
+                d.setTextColor(C_ACC, C_BG);
+                d.drawString("95% CI for coefficients:", 4, y); y += 11;
+                d.setTextColor(C_FG, C_BG);
+                for (int i = 0; i < p; i++) {
+                    double lo = beta[i] - tcrit*SE[i];
+                    double hi = beta[i] + tcrit*SE[i];
+                    snprintf(l, sizeof(l), "b%d: %.3g [%.3g, %.3g]", i, beta[i], lo, hi);
+                    d.drawString(l, 4, y); y += 11;
+                }
+                snprintf(l, sizeof(l), "t* = %.3f  df = %d", tcrit, n - p);
+                d.setTextColor(C_DIM, C_BG);
+                d.drawString(l, 4, y);
             }
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 if (st.fn && IS_LEFT)  { if (page > 0) { page--; break; } }
-                if (st.fn && IS_RIGHT) { if (page < 2) { page++; break; } }
+                if (st.fn && IS_RIGHT) { if (page < 3) { page++; break; } }
                 if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("mreg");
             }
         }
     }
+
     void stepwise() {
+        lastXi = -1;
         int yi = pickList("Y list?"); if (yi < 0) return;
         int n = G.stat[yi].count;
         int cand[STAT_LISTS], nc = 0;
@@ -5881,6 +8849,7 @@ private:
         }
         DM.waitEsc();
     }
+
     void predict() {
         if (lastXi < 0) { DM.notify("No model yet", C_WARN); return; }
         char b[24] = "1";
@@ -5900,6 +8869,7 @@ private:
         DM.notify(m, C_OK, 1500);
         G.ans = y; G.ansComplex = false;
     }
+
     void saveResid() {
         if (lastXi < 0) { DM.notify("No model yet", C_WARN); return; }
         int dst = pickList("Save to which?");
@@ -5934,6 +8904,7 @@ public:
             "Two-way ANOVA","Chi-Square GOF","Chi-Square Independence (rxc)",
             "Fisher's exact (2x2)","Back"
         };
+        for (;;) {
         int s = DM.menu("Tests", items, 12);
         if (s < 0 || s == 11) return;
         switch (s) {
@@ -5949,16 +8920,19 @@ public:
             case 9: chiIndep();      break;
             case 10:fisherExact();   break;
         }
+        }
     }
 private:
     int pickList(const char* title) {
-        const char* items[] = {"L1","L2","L3","L4","L5","L6","L7","L8"};
+        const char* items[STAT_LISTS]; for (int _i = 0; _i < STAT_LISTS; _i++) items[_i] = statLbl(_i);
         return DM.menu(title, items, STAT_LISTS);
     }
+
     int pickSide() {
         const char* items[] = {"Two-sided", "Upper (right)", "Lower (left)"};
         return DM.menu("Side", items, 3);
     }
+
     void showTest(const char* nm, double stat, int df, double p, int side = 0) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(nm); DM.footer("S:BMP", "Y:Ans", "ESC:back");
@@ -5975,19 +8949,22 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y') || M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("p->Ans", C_OK); return; }
             if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("test");
         }
     }
+
     void zTest1() {
         int li = pickList("Sample list?"); if (li < 0) return;
         char b[16]="0"; if (!DM.inputLine("mu0:", b, sizeof(b))) return;
         double mu0 = atof(b);
         strcpy(b, "1"); if (!DM.inputLine("sigma (known):", b, sizeof(b))) return;
-        double sd = atof(b);
+        double sd = atof(b); if (isnan(mu0) || isinf(mu0) || !(sd > 0)) { DM.notify("sd>0 required", C_ERR); return; }
         int side = pickSide(); if (side < 0) return;
         int n = G.stat[li].count;
+        if (n < 1) { DM.notify("n<1", C_ERR); return; }
+        if (sd < 1e-15) { DM.notify("sigma > 0", C_ERR); return; }
         double sum = 0;
         for (int i = 0; i < n; i++) sum += G.stat[li].data[i];
         double m = sum / n;
@@ -5998,6 +8975,7 @@ private:
         else                p = Dist::normalCDF(z);
         showTest("z-test", z, 0, p, side);
     }
+
     void tTest1() {
         int li = pickList("Sample list?"); if (li < 0) return;
         char b[16]="0"; if (!DM.inputLine("mu0:", b, sizeof(b))) return;
@@ -6008,6 +8986,7 @@ private:
         double sum=0, sum2=0;
         for (int i=0;i<n;i++){ sum+=G.stat[li].data[i]; sum2+=G.stat[li].data[i]*G.stat[li].data[i]; }
         double m = sum/n, sd = sqrt((sum2 - n*m*m)/(n-1));
+        if (sd < 1e-15) { DM.notify("Zero variance", C_ERR); return; }
         double t = (m - mu0) / (sd / sqrt((double)n));
         int df = n - 1;
         double p;
@@ -6016,6 +8995,7 @@ private:
         else                p = Dist::tCDF(t, df);
         showTest("1-sample t", t, df, p, side);
     }
+
     void tTest2(bool welch) {
         int la = pickList("Group A?"); if (la < 0) return;
         int lb = pickList("Group B?"); if (lb < 0) return;
@@ -6030,14 +9010,17 @@ private:
         double t; int df;
         if (!welch) {
             double sp = sqrt(((na-1)*va + (nb-1)*vb) / (na+nb-2));
+            if (sp < 1e-15) { DM.notify("Zero variance both groups", C_ERR); return; }
             t = (ma - mb) / (sp * sqrt(1.0/na + 1.0/nb));
             df = na + nb - 2;
         } else {
             double seA = va/na, seB = vb/nb;
+            if (seA + seB < 1e-15) { DM.notify("Zero variance both groups", C_ERR); return; }
             t = (ma - mb) / sqrt(seA + seB);
             double num = (seA + seB) * (seA + seB);
             double den = (seA*seA)/(na-1) + (seB*seB)/(nb-1);
-            df = (int)(num/den + 0.5);
+            if (den < 1e-300) df = na + nb - 2;
+            else { double q = num/den + 0.5; if (q > 1e6) q = 1e6; df = (int)q; }
         }
         double p;
         if (side == 0)      p = 2.0 * (1.0 - Dist::tCDF(fabs(t), df));
@@ -6045,6 +9028,7 @@ private:
         else                p = Dist::tCDF(t, df);
         showTest(welch ? "Welch t" : "2-samp t (eq)", t, df, p, side);
     }
+
     void tTestPaired() {
         int la = pickList("Pair A?"); if (la < 0) return;
         int lb = pickList("Pair B?"); if (lb < 0) return;
@@ -6055,6 +9039,7 @@ private:
         for (int i=0;i<n;i++){ double dd=G.stat[la].data[i]-G.stat[lb].data[i]; sd1+=dd; sd2+=dd*dd; }
         double m = sd1/n;
         double v = (sd2 - n*m*m)/(n-1);
+        if (v < 1e-15) { DM.notify("Zero variance (all diffs equal)", C_ERR); return; }
         double t = m / (sqrt(v)/sqrt((double)n));
         int df = n - 1;
         double p;
@@ -6063,6 +9048,7 @@ private:
         else                p = Dist::tCDF(t, df);
         showTest("Paired t", t, df, p, side);
     }
+
     void fTest() {
         int la = pickList("List A?"); if (la < 0) return;
         int lb = pickList("List B?"); if (lb < 0) return;
@@ -6073,11 +9059,13 @@ private:
         for (int i=0;i<nb;i++){ sb+=G.stat[lb].data[i]; sb2+=G.stat[lb].data[i]*G.stat[lb].data[i]; }
         double ma=sa/na, mb=sb/nb;
         double va=(sa2-na*ma*ma)/(na-1), vb=(sb2-nb*mb*mb)/(nb-1);
+        if (vb < 1e-15) { DM.notify("Group B has zero variance", C_ERR); return; }
         double F = va/vb;
         int df1 = na-1, df2 = nb-1;
         double p = (F > 1) ? 2*(1 - Dist::FCDF(F, df1, df2)) : 2*Dist::FCDF(F, df1, df2);
         showTest("F-test", F, df1, p, 0);
     }
+
     void anova1way() {
         int g[STAT_LISTS], gN = 0, total = 0;
         for (int i = 0; i < STAT_LISTS; i++) if (G.stat[i].count > 1) g[gN++] = i;
@@ -6102,10 +9090,12 @@ private:
             }
         }
         int df1 = gN-1, df2 = total-gN;
+        if (SSW < 1e-12) { DM.notify("All groups identical", C_ERR); return; }
         double F = (SSB/df1) / (SSW/df2);
         double p = 1.0 - Dist::FCDF(F, df1, df2);
         showTest("ANOVA 1way", F, df1, p, 0);
     }
+
     void anova2way() {
         int n = G.stat[0].count;
         if (n < 4 || G.stat[1].count != n || G.stat[2].count != n) {
@@ -6117,10 +9107,10 @@ private:
             int b = (int)round(G.stat[2].data[i]);
             bool found = false;
             for (int k = 0; k < nA; k++) if (Alev[k] == a) { found = true; break; }
-            if (!found && nA < 20) Alev[nA++] = a;
+            if (!found) { if (nA < 20) Alev[nA++] = a; else { DM.notify(">20 A levels", C_ERR); return; } }
             found = false;
             for (int k = 0; k < nB; k++) if (Blev[k] == b) { found = true; break; }
-            if (!found && nB < 20) Blev[nB++] = b;
+            if (!found) { if (nB < 20) Blev[nB++] = b; else { DM.notify(">20 B levels", C_ERR); return; } }
         }
         double sumAll = 0;
         for (int i = 0; i < n; i++) sumAll += G.stat[0].data[i];
@@ -6147,6 +9137,8 @@ private:
         for (int i = 0; i < n; i++) SST += (G.stat[0].data[i] - mAll) * (G.stat[0].data[i] - mAll);
         double SSE = SST - SSA - SSB;
         int dfA = nA-1, dfB = nB-1, dfE = n - nA - nB + 1;
+        if (dfE <= 0) { DM.notify("n too small for levels", C_ERR); return; }
+        if (SSE < 1e-12) { DM.notify("SSE=0 (perfect fit)", C_ERR); return; }
         double FA = (SSA/dfA) / (SSE/dfE);
         double FB = (SSB/dfB) / (SSE/dfE);
         double pA = 1 - Dist::FCDF(FA, dfA, dfE);
@@ -6162,6 +9154,7 @@ private:
         snprintf(l,sizeof(l),"dfA=%d dfB=%d dfE=%d", dfA, dfB, dfE); d.drawString(l, 4, y); y += 11;
         DM.waitEsc();
     }
+
     void chiGOF() {
         int oL = pickList("Observed?"); if (oL < 0) return;
         int eL = pickList("Expected?"); if (eL < 0) return;
@@ -6177,6 +9170,7 @@ private:
         double p = 1.0 - Dist::chiSquareCDF(chi, df);
         showTest("Chi^2 GOF", chi, df, p, 0);
     }
+
     void chiIndep() {
         char b[8] = "2";
         if (!DM.inputLine("Rows (2-6):", b, sizeof(b))) return;
@@ -6211,6 +9205,7 @@ private:
         double p = 1.0 - Dist::chiSquareCDF(chi, df);
         showTest("Chi^2 indep", chi, df, p, 0);
     }
+
     void fisherExact() {
         char b[8];
         long long a, bb, cc, dd;
@@ -6218,6 +9213,7 @@ private:
         strcpy(b, "0"); if (!DM.inputLine("b:", b, sizeof(b))) return; bb = atol(b);
         strcpy(b, "0"); if (!DM.inputLine("c:", b, sizeof(b))) return; cc = atol(b);
         strcpy(b, "0"); if (!DM.inputLine("d:", b, sizeof(b))) return; dd = atol(b);
+        if (a < 0 || bb < 0 || cc < 0 || dd < 0) { DM.notify("Negative cell", C_ERR); return; }
         long long n = a + bb + cc + dd;
         long long r1 = a + bb, r2 = cc + dd, c1 = a + cc, c2 = bb + dd;
         auto logFact = [](long long n) { return lgamma((double)(n+1)); };
@@ -6243,18 +9239,16 @@ private:
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 15 / 20 ─ ノンパラ / リスク / 分布ブラウザ                      ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class StatNonparOdds {
 public:
     void run() {
         const char* items[] = {
             "Mann-Whitney U","Wilcoxon signed rank","Kruskal-Wallis","Friedman",
-            "Sign test","Spearman correlation","Kendall tau","Odds Ratio + 95% CI",
-            "Risk Ratio + 95% CI","Risk Difference + 95% CI","NNT (Number Needed to Treat)",
-            "Confidence Interval (mean)","CI (proportion)","Back"
+            "Sign test","Spearman correlation","Kendall tau","Back"
         };
-        int s = DM.menu("Nonpar/Risk", items, 14);
-        if (s < 0 || s == 13) return;
+        for (;;) {
+        int s = DM.menu("Non-parametric", items, 8);
+        if (s < 0 || s == 7) return;
         switch (s) {
             case 0: mannWhitney();    break;
             case 1: wilcoxon();       break;
@@ -6263,19 +9257,49 @@ public:
             case 4: signTest();       break;
             case 5: spearman();       break;
             case 6: kendallTau();     break;
-            case 7: oddsRatio();      break;
-            case 8: riskRatio();      break;
-            case 9: riskDiff();       break;
-            case 10: nnt();           break;
-            case 11: ciMean();        break;
-            case 12: ciProp();        break;
+        }
+        }
+    }
+
+    // Medical Calculator から呼ばれるリスク・オッズ系
+    void medicalRiskMenu() {
+        const char* items[] = {
+            "Odds Ratio + 95% CI","Risk Ratio + 95% CI",
+            "Risk Difference + 95% CI","NNT (Number Needed to Treat)","Back"
+        };
+        for (;;) {
+        int s = DM.menu("Risk / Odds (2x2)", items, 5);
+        if (s < 0 || s == 4) return;
+        switch (s) {
+            case 0: oddsRatio();  break;
+            case 1: riskRatio();  break;
+            case 2: riskDiff();   break;
+            case 3: nnt();        break;
+        }
+        }
+    }
+
+    // Medical Calculator から呼ばれる信頼区間
+    void medicalCIMenu() {
+        const char* items[] = {
+            "Confidence Interval (mean)","CI (proportion)","Bootstrap CI (mean/median)","Back"
+        };
+        for (;;) {
+        int s = DM.menu("Confidence Intervals", items, 4);
+        if (s < 0 || s == 3) return;
+        switch (s) {
+            case 0: ciMean(); break;
+            case 1: ciProp(); break;
+            case 2: ciBootstrap(); break;
+        }
         }
     }
 private:
     int pickList(const char* title) {
-        const char* items[] = {"L1","L2","L3","L4","L5","L6","L7","L8"};
+        const char* items[STAT_LISTS]; for (int _i = 0; _i < STAT_LISTS; _i++) items[_i] = statLbl(_i);
         return DM.menu(title, items, STAT_LISTS);
     }
+
     void showTest(const char* nm, double stat, int df, double p, const char* extra = "") {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(nm); DM.footer("Y:p->Ans","S:BMP","ESC:back");
@@ -6292,11 +9316,12 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y') || M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("p->Ans", C_OK); return; }
             if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("test");
         }
     }
+
     void mannWhitney() {
         int la = pickList("Group A?"); if (la < 0) return;
         int lb = pickList("Group B?"); if (lb < 0) return;
@@ -6304,7 +9329,9 @@ private:
         if (na < 2 || nb < 2) { DM.notify("n<2", C_ERR); return; }
         int N = na + nb;
         double* v = (double*)malloc(N * sizeof(double));
+        if (!v) { DM.notify("malloc fail", C_ERR); return; }
         int*    g = (int*)   malloc(N * sizeof(int));
+        if (!g) { free(v); DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < na; i++) { v[i] = G.stat[la].data[i]; g[i] = 0; }
         for (int i = 0; i < nb; i++) { v[na+i] = G.stat[lb].data[i]; g[na+i] = 1; }
         for (int i = 1; i < N; i++) {
@@ -6313,6 +9340,7 @@ private:
             v[j+1] = k; g[j+1] = gk;
         }
         double* rk = (double*)malloc(N * sizeof(double));
+        if (!rk) { free(v); free(g); DM.notify("malloc fail", C_ERR); return; }
         int i = 0;
         while (i < N) {
             int j = i; while (j+1 < N && v[j+1] == v[i]) j++;
@@ -6333,12 +9361,14 @@ private:
         char extra[32]; snprintf(extra, sizeof(extra), "z=%.3f", z);
         showTest("Mann-Whitney U", U, 0, p, extra);
     }
+
     void wilcoxon() {
         int la = pickList("Pair A?"); if (la < 0) return;
         int lb = pickList("Pair B?"); if (lb < 0) return;
         int n = G.stat[la].count;
         if (G.stat[lb].count != n || n < 2) { DM.notify("Mismatch", C_ERR); return; }
         double* d = (double*)malloc(n * sizeof(double));
+        if (!d) { DM.notify("malloc fail", C_ERR); return; }
         int m = 0;
         for (int i = 0; i < n; i++) {
             double t = G.stat[la].data[i] - G.stat[lb].data[i];
@@ -6346,7 +9376,9 @@ private:
         }
         if (m < 2) { free(d); DM.notify("All ties", C_ERR); return; }
         double* ad = (double*)malloc(m * sizeof(double));
+        if (!ad) { free(d); DM.notify("malloc fail", C_ERR); return; }
         int*    sg = (int*)   malloc(m * sizeof(int));
+        if (!sg) { free(d); free(ad); DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < m; i++) { ad[i] = fabs(d[i]); sg[i] = (d[i] > 0) ? 1 : -1; }
         for (int i = 1; i < m; i++) {
             double k = ad[i]; int s = sg[i]; int j = i - 1;
@@ -6372,13 +9404,16 @@ private:
         char extra[32]; snprintf(extra, sizeof(extra), "z=%.3f", z);
         showTest("Wilcoxon", W, 0, p, extra);
     }
+
     void kruskalWallis() {
         int g[STAT_LISTS], gN = 0, total = 0;
         for (int i = 0; i < STAT_LISTS; i++) if (G.stat[i].count >= 2) g[gN++] = i;
         if (gN < 2) { DM.notify("Need >=2 lists", C_ERR); return; }
         for (int i = 0; i < gN; i++) total += G.stat[g[i]].count;
         double* v = (double*)malloc(total * sizeof(double));
+        if (!v) { DM.notify("malloc fail", C_ERR); return; }
         int*    grp = (int*) malloc(total * sizeof(int));
+        if (!grp) { free(v); DM.notify("malloc fail", C_ERR); return; }
         int p = 0;
         for (int i = 0; i < gN; i++) {
             for (int j = 0; j < G.stat[g[i]].count; j++) {
@@ -6391,6 +9426,7 @@ private:
             v[j+1] = k; grp[j+1] = gg;
         }
         double* rk = (double*)malloc(total * sizeof(double));
+        if (!rk) { free(v); free(grp); DM.notify("malloc fail", C_ERR); return; }
         int i = 0;
         while (i < total) {
             int j = i; while (j+1 < total && v[j+1] == v[i]) j++;
@@ -6410,6 +9446,7 @@ private:
         free(v); free(grp); free(rk);
         showTest("Kruskal-Wallis", H, df, pp);
     }
+
     void friedman() {
         int g[STAT_LISTS], gN = 0;
         for (int i = 0; i < STAT_LISTS; i++) if (G.stat[i].count > 0) g[gN++] = i;
@@ -6438,6 +9475,7 @@ private:
         double p = 1.0 - Dist::chiSquareCDF(Q, df);
         showTest("Friedman", Q, df, p);
     }
+
     void signTest() {
         int la = pickList("Pair A?"); if (la < 0) return;
         int lb = pickList("Pair B?"); if (lb < 0) return;
@@ -6456,28 +9494,34 @@ private:
         char extra[32]; snprintf(extra, sizeof(extra), "+%d -%d", pos, neg);
         showTest("Sign test", k, 0, p, extra);
     }
+
     void spearman() {
         int la = pickList("X?"); if (la < 0) return;
         int lb = pickList("Y?"); if (lb < 0) return;
         int n = G.stat[la].count;
         if (G.stat[lb].count != n || n < 3) { DM.notify("n>=3", C_ERR); return; }
         double* xr = rankList(G.stat[la].data, n);
+        if (!xr) return;
         double* yr = rankList(G.stat[lb].data, n);
+        if (!yr) { free(xr); return; }
         double sx=0, sy=0, sxx=0, syy=0, sxy=0;
         for (int i = 0; i < n; i++) {
             sx += xr[i]; sy += yr[i];
             sxx += xr[i]*xr[i]; syy += yr[i]*yr[i]; sxy += xr[i]*yr[i];
         }
-        double rho = (n*sxy - sx*sy) / sqrt((n*sxx - sx*sx)*(n*syy - sy*sy));
+        double denom_rho = sqrt((n*sxx - sx*sx)*(n*syy - sy*sy)); if (denom_rho < 1e-12) { DM.notify("Spearman: zero variance", C_ERR); free(xr); free(yr); return; } double rho = (n*sxy - sx*sy) / denom_rho;
         double t = rho * sqrt((double)(n-2)/(1-rho*rho));
         double p = 2.0 * (1.0 - Dist::tCDF(fabs(t), n-2));
         free(xr); free(yr);
         char extra[32]; snprintf(extra, sizeof(extra), "rho=%.4f", rho);
         showTest("Spearman", t, n-2, p, extra);
     }
+
     double* rankList(double* a, int n) {
         double* tmp = (double*)malloc(n*sizeof(double));
+        if (!tmp) { DM.notify("malloc fail", C_ERR); return nullptr; }
         int*    idx = (int*)   malloc(n*sizeof(int));
+        if (!idx) { free(tmp); DM.notify("malloc fail", C_ERR); return nullptr; }
         for (int i = 0; i < n; i++) { tmp[i] = a[i]; idx[i] = i; }
         for (int i = 1; i < n; i++) {
             double k = tmp[i]; int ki = idx[i]; int j = i-1;
@@ -6485,6 +9529,7 @@ private:
             tmp[j+1]=k; idx[j+1]=ki;
         }
         double* rk = (double*)malloc(n*sizeof(double));
+        if (!rk) { free(tmp); free(idx); DM.notify("malloc fail", C_ERR); return nullptr; }
         int i = 0;
         while (i < n) {
             int j = i; while (j+1 < n && tmp[j+1]==tmp[i]) j++;
@@ -6495,6 +9540,7 @@ private:
         free(tmp); free(idx);
         return rk;
     }
+
     void kendallTau() {
         int la = pickList("X?"); if (la < 0) return;
         int lb = pickList("Y?"); if (lb < 0) return;
@@ -6512,12 +9558,13 @@ private:
                 else                          disc++;
             }
         long N = (long)n * (n-1) / 2;
-        double tau = (double)(conc - disc) / sqrt((double)(N - tieX)*(N - tieY));
+        double denom_tau = sqrt((double)(N - tieX)*(N - tieY)); if (denom_tau < 1e-12) { DM.notify("Kendall: all ties", C_ERR); return; } double tau = (double)(conc - disc) / denom_tau;
         double z = 3 * tau * sqrt((double)n*(n-1)) / sqrt((double)2*(2*n+5));
         double p = 2.0 * (1.0 - Dist::normalCDF(fabs(z)));
         char extra[32]; snprintf(extra, sizeof(extra), "tau=%.4f", tau);
         showTest("Kendall tau", z, 0, p, extra);
     }
+
     void oddsRatio() { run2x2("Odds Ratio", 0); }
     void riskRatio() { run2x2("Risk Ratio", 1); }
     void riskDiff()  { run2x2("Risk Diff",  2); }
@@ -6569,11 +9616,12 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y') || M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("->Ans", C_OK); return; }
             if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("ratio");
         }
     }
+
     void nnt() {
         char b[16] = "0.05";
         if (!DM.inputLine("Risk diff:", b, sizeof(b))) return;
@@ -6585,6 +9633,116 @@ private:
         DM.notify(m, C_OK, 1500);
         G.ans = v; G.ansComplex = false;
     }
+
+    static int bsCmp(const void* a, const void* b) {
+        double x = *(const double*)a, y = *(const double*)b;
+        return (x > y) - (x < y);
+    }
+
+    // 昇順ソート済み配列の分位点 (線形補間)
+    static double bsQuantile(const double* s, int B, double q) {
+        double pos = q * (B - 1);
+        int i = (int)floor(pos);
+        if (i < 0) return s[0];
+        if (i >= B - 1) return s[B - 1];
+        return s[i] + (pos - i) * (s[i+1] - s[i]);
+    }
+
+    static double bsMedian(double* t, int n) {
+        qsort(t, n, sizeof(double), bsCmp);
+        return (n & 1) ? t[n/2] : (t[n/2 - 1] + t[n/2]) / 2;
+    }
+
+    void ciBootstrap() {
+        int li = pickList("Bootstrap: list?"); if (li < 0) return;
+        int n = G.stat[li].count;
+        if (n < 2) { DM.notify("n<2", C_ERR); return; }
+        const char* sitems[] = {"Mean", "Median"};
+        int sel = DM.menu("Statistic", sitems, 2);
+        if (sel < 0) return;
+        const char* mitems[] = {"Percentile", "BCa"};
+        int method = DM.menu("Method", mitems, 2);
+        if (method < 0) return;
+        char b[16] = "0.95";
+        if (!DM.inputLine("Confidence:", b, sizeof(b))) return;
+        double c = atof(b);
+        if (!(c > 0 && c < 1)) { DM.notify("0<c<1", C_ERR); return; }
+        strcpy(b, "1000");
+        if (!DM.inputLine("Resamples 100-5000:", b, sizeof(b))) return;
+        int B = atoi(b);
+        if (B < 100 || B > 5000) { DM.notify("100..5000", C_ERR); return; }
+        double* est = (double*)malloc(B * sizeof(double));
+        double* tmp = (double*)malloc(n * sizeof(double));
+        if (!est || !tmp) { free(est); free(tmp); DM.notify("malloc fail", C_ERR); return; }
+        const double* X = G.stat[li].data;
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Bootstrap CI");
+        d.setTextColor(C_DIM, C_BG); d.drawString("Resampling...", 4, HDR_H + 8);
+        double point;
+        if (sel == 0) { double s0 = 0; for (int i = 0; i < n; i++) s0 += X[i]; point = s0 / n; }
+        else { memcpy(tmp, X, n * sizeof(double)); point = bsMedian(tmp, n); }
+        for (int k = 0; k < B; k++) {
+            double sum = 0;
+            for (int i = 0; i < n; i++) { tmp[i] = X[esp_random() % (uint32_t)n]; sum += tmp[i]; }
+            est[k] = (sel == 0) ? sum / n : bsMedian(tmp, n);
+        }
+        double em = 0; for (int k = 0; k < B; k++) em += est[k];
+        em /= B;
+        double ev = 0; for (int k = 0; k < B; k++) ev += (est[k] - em) * (est[k] - em);
+        double sdBoot = sqrt(ev / (B - 1));
+        double lo, hi;
+        if (method == 0) {
+            qsort(est, B, sizeof(double), bsCmp);
+            lo = bsQuantile(est, B, (1 - c) / 2);
+            hi = bsQuantile(est, B, 1 - (1 - c) / 2);
+        } else {
+            int below = 0;
+            for (int k = 0; k < B; k++) if (est[k] < point) below++;
+            double z0 = (below > 0 && below < B) ? Dist::normalInv((double)below / B) : 0;
+            double* jack = (double*)malloc(n * sizeof(double));
+            if (!jack) { free(est); free(tmp); DM.notify("malloc fail", C_ERR); return; }
+            double jackMean = 0;
+            for (int i = 0; i < n; i++) {
+                int m = 0;
+                for (int j = 0; j < n; j++) if (j != i) tmp[m++] = X[j];
+                if (sel == 0) { double s = 0; for (int k = 0; k < m; k++) s += tmp[k]; jack[i] = s / m; }
+                else          { jack[i] = bsMedian(tmp, m); }
+                jackMean += jack[i];
+            }
+            jackMean /= n;
+            double num = 0, den = 0;
+            for (int i = 0; i < n; i++) {
+                double d = jackMean - jack[i];
+                num += d*d*d;
+                den += d*d;
+            }
+            free(jack);
+            double a = (den > 1e-12) ? num / (6.0 * pow(den, 1.5)) : 0;
+            double za_lo = Dist::normalInv((1-c)/2);
+            double za_hi = Dist::normalInv(1-(1-c)/2);
+            double t1 = z0 + (z0 + za_lo) / (1 - a * (z0 + za_lo));
+            double t2 = z0 + (z0 + za_hi) / (1 - a * (z0 + za_hi));
+            double q_lo = Dist::normalCDF(t1);
+            double q_hi = Dist::normalCDF(t2);
+            if (q_lo < 0.001) q_lo = 0.001;
+            if (q_hi > 0.999) q_hi = 0.999;
+            if (q_lo >= q_hi) { q_lo = (1-c)/2; q_hi = 1-(1-c)/2; }
+            qsort(est, B, sizeof(double), bsCmp);
+            lo = bsQuantile(est, B, q_lo);
+            hi = bsQuantile(est, B, q_hi);
+        }
+        free(est); free(tmp);
+        d.fillScreen(C_BG); DM.header("Bootstrap CI"); DM.footer("","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[44];
+        snprintf(l, sizeof(l), "%s = %.5g", sel == 0 ? "mean" : "median", point); d.drawString(l, 4, HDR_H + 8);
+        snprintf(l, sizeof(l), "%g%% CI = [%.4g, %.4g]", c*100, lo, hi);           d.drawString(l, 4, HDR_H + 24);
+        d.setTextColor(C_DIM, C_BG);
+        snprintf(l, sizeof(l), "boot SE = %.4g  B = %d  n = %d", sdBoot, B, n);     d.drawString(l, 4, HDR_H + 40);
+        d.drawString(method == 0 ? "percentile method" : "BCa method", 4, HDR_H + 54);
+        DM.waitEsc();
+    }
+
     void ciMean() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count;
@@ -6608,11 +9766,13 @@ private:
         snprintf(l,sizeof(l),"SE = %.4g  t = %.3f", SE, t);  d.drawString(l, 4, HDR_H+40);
         DM.waitEsc();
     }
+
     void ciProp() {
         char b[16];
         long x, n;
         strcpy(b,"5"); if (!DM.inputLine("x:", b, sizeof(b))) return; x = atol(b);
         strcpy(b,"10"); if (!DM.inputLine("n:", b, sizeof(b))) return; n = atol(b);
+        if (x < 0 || n <= 0 || x > n) { DM.notify("need 0<=x<=n", C_ERR); return; }
         strcpy(b,"0.95"); if (!DM.inputLine("Conf:", b, sizeof(b))) return;
         double c = atof(b);
         double p = (double)x/n;
@@ -6638,6 +9798,7 @@ public:
             "Normal N(mu, sigma)","Student t (df)","Chi-Square (df)","F (d1, d2)",
             "Binomial (n, p)","Poisson (lambda)","Geometric (p)","Back"
         };
+        for (;;) {
         int s = DM.menu("Distribution", items, 8);
         if (s < 0 || s == 7) return;
         switch (s) {
@@ -6649,12 +9810,14 @@ public:
             case 5: poisson();  break;
             case 6: geometric();break;
         }
+        }
     }
 private:
     int dirMenu() {
         const char* d[] = {"PDF/PMF f(x)","CDF P(X<=x)","Inverse: x s.t. P=q","Plot PDF","Back"};
         return DM.menu("Action", d, 5);
     }
+
     void show3(const char* t, const char* l1, double v1, const char* l2, double v2,
                               const char* l3, double v3) {
         auto& d = M5Cardputer.Display;
@@ -6668,11 +9831,12 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("->Ans",C_OK); return; }
             if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("dist");
         }
     }
+
     void plotPDF(double xmin, double xmax, double (*pdf)(double, double*), double* params) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("PDF Plot"); DM.footer("S:BMP","","ESC:back");
@@ -6695,10 +9859,11 @@ private:
         }
         DM.waitEsc();
     }
+
     void normal() {
         char b[24];
         strcpy(b, "0"); if (!DM.inputLine("mu:", b, sizeof(b))) return; double mu = atof(b);
-        strcpy(b, "1"); if (!DM.inputLine("sigma:", b, sizeof(b))) return; double sd = atof(b);
+        strcpy(b, "1"); if (!DM.inputLine("sigma:", b, sizeof(b))) return; double sd = atof(b); if (isnan(mu) || isinf(mu) || !(sd > 0)) { DM.notify("sd>0 required", C_ERR); return; }
         int act = dirMenu(); if (act < 0 || act == 4) return;
         if (act == 0 || act == 1) {
             strcpy(b, "0"); if (!DM.inputLine("x:", b, sizeof(b))) return; double x = atof(b);
@@ -6717,9 +9882,11 @@ private:
             plotPDF(mu - 4*sd, mu + 4*sd, [](double x, double* p){ return Dist::normalPDF(x, p[0], p[1]); }, prm);
         }
     }
+
     void tDist() {
         char b[24];
         strcpy(b, "10"); if (!DM.inputLine("df:", b, sizeof(b))) return; int df = atoi(b);
+        if (df < 1) { DM.notify("df>=1", C_ERR); return; }
         int act = dirMenu(); if (act < 0 || act == 4) return;
         if (act == 0 || act == 1) {
             strcpy(b, "0"); if (!DM.inputLine("x:", b, sizeof(b))) return; double x = atof(b);
@@ -6738,9 +9905,11 @@ private:
             plotPDF(-5, 5, [](double x, double* p){ return Dist::tPDF(x, (int)p[0]); }, &sdf);
         }
     }
+
     void chi2() {
         char b[24];
         strcpy(b, "5"); if (!DM.inputLine("df:", b, sizeof(b))) return; int df = atoi(b);
+        if (df < 1) { DM.notify("df>=1", C_ERR); return; }
         int act = dirMenu(); if (act < 0 || act == 4) return;
         if (act == 0 || act == 1) {
             strcpy(b, "0"); if (!DM.inputLine("x:", b, sizeof(b))) return; double x = atof(b);
@@ -6759,10 +9928,12 @@ private:
             plotPDF(0.01, df * 3, [](double x, double* p){ return Dist::chiSquarePDF(x, (int)p[0]); }, &sdf);
         }
     }
+
     void fDist() {
         char b[24];
         strcpy(b, "5"); if (!DM.inputLine("d1:", b, sizeof(b))) return; int d1 = atoi(b);
         strcpy(b, "5"); if (!DM.inputLine("d2:", b, sizeof(b))) return; int d2 = atoi(b);
+        if (d1 < 1 || d2 < 1) { DM.notify("d1,d2>=1", C_ERR); return; }
         int act = dirMenu(); if (act < 0 || act == 4) return;
         if (act == 0 || act == 1) {
             strcpy(b, "1"); if (!DM.inputLine("x:", b, sizeof(b))) return; double x = atof(b);
@@ -6781,10 +9952,13 @@ private:
             plotPDF(0.01, 3, [](double x, double* p){ return Dist::FPDF(x, (int)p[0], (int)p[1]); }, sp);
         }
     }
+
     void binomial() {
         char b[24];
         strcpy(b, "10"); if (!DM.inputLine("n:", b, sizeof(b))) return; int n = atoi(b);
+        if (n < 0) { DM.notify("n>=0", C_ERR); return; }
         strcpy(b, "0.5"); if (!DM.inputLine("p:", b, sizeof(b))) return; double p = atof(b);
+        if (p <= 0 || p >= 1) { DM.notify("0<p<1", C_ERR); return; }
         int act = dirMenu(); if (act < 0 || act == 4) return;
         if (act == 0 || act == 1) {
             strcpy(b, "0"); if (!DM.inputLine("k:", b, sizeof(b))) return; int k = atoi(b);
@@ -6799,9 +9973,11 @@ private:
             G.ans = k; G.ansComplex = false;
         }
     }
+
     void poisson() {
         char b[24];
         strcpy(b, "3"); if (!DM.inputLine("lambda:", b, sizeof(b))) return; double l = atof(b);
+        if (l <= 0) { DM.notify("lambda>0", C_ERR); return; }
         int act = dirMenu(); if (act < 0 || act == 4) return;
         if (act == 0 || act == 1) {
             strcpy(b, "0"); if (!DM.inputLine("k:", b, sizeof(b))) return; int k = atoi(b);
@@ -6816,9 +9992,11 @@ private:
             G.ans = k; G.ansComplex = false;
         }
     }
+
     void geometric() {
         char b[24];
         strcpy(b, "0.5"); if (!DM.inputLine("p:", b, sizeof(b))) return; double p = atof(b);
+        if (p <= 0 || p > 1) { DM.notify("0<p<=1", C_ERR); return; }
         int act = dirMenu(); if (act < 0 || act == 4) return;
         if (act == 0 || act == 1) {
             strcpy(b, "1"); if (!DM.inputLine("k:", b, sizeof(b))) return; int k = atoi(b);
@@ -6838,7 +10016,6 @@ private:
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 16 / 20 ─ 多変量解析                                            ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class StatMultivar {
 public:
     void run() {
@@ -6846,6 +10023,7 @@ public:
             "PCA (Principal Component Analysis)","Factor Analysis (with Varimax)",
             "k-means Clustering","Hierarchical (Ward)","Decision Tree (CART regress)","Back"
         };
+        for (;;) {
         int s = DM.menu("Multivariate", items, 6);
         if (s < 0 || s == 5) return;
         switch (s) {
@@ -6855,12 +10033,9 @@ public:
             case 3: hierarchical();  break;
             case 4: decisionTree();  break;
         }
+        }
     }
 private:
-    int pickList(const char* title) {
-        const char* it[] = {"L1","L2","L3","L4","L5","L6","L7","L8"};
-        return DM.menu(title, it, STAT_LISTS);
-    }
     int collectVarLists(int* out) {
         int n = 0;
         for (int i = 0; i < STAT_LISTS; i++) if (G.stat[i].count >= 2) out[n++] = i;
@@ -6870,6 +10045,7 @@ private:
         for (int i = 0; i < n; i++) if (G.stat[out[i]].count == len) out[n2++] = out[i];
         return n2;
     }
+
     void standardize(double* X, int n, int p) {
         for (int j = 0; j < p; j++) {
             double s = 0, s2 = 0;
@@ -6880,6 +10056,7 @@ private:
             for (int i = 0; i < n; i++) X[i*p+j] = (X[i*p+j] - m) / sd;
         }
     }
+
     void covMatrix(double* X, int n, int p, double* C) {
         for (int i = 0; i < p; i++) for (int j = 0; j < p; j++) C[i*p+j] = 0;
         double mean[FA_MAX_VAR];
@@ -6894,6 +10071,7 @@ private:
                     C[a*p+b] += (X[i*p+a] - mean[a]) * (X[i*p+b] - mean[b]);
         for (int i = 0; i < p; i++) for (int j = 0; j < p; j++) C[i*p+j] /= (n - 1);
     }
+
     void corMatrix(double* X, int n, int p, double* R) {
         covMatrix(X, n, p, R);
         double sd[FA_MAX_VAR];
@@ -6902,6 +10080,7 @@ private:
             for (int j = 0; j < p; j++)
                 R[i*p+j] = R[i*p+j] / (sd[i] * sd[j]);
     }
+
     void pca() {
         int lst[FA_MAX_VAR];
         int p = collectVarLists(lst);
@@ -6949,13 +10128,14 @@ private:
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) { free(X); return; }
+                if (IS_ESC) { free(X); return; }
                 if (st.fn && IS_LEFT)  { if (page > 0) { page--; break; } }
                 if (st.fn && IS_RIGHT) { if (page < 1) { page++; break; } }
                 if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("pca");
             }
         }
     }
+
     void varimax(double* L, int p, int k) {
         const double eps = 1e-7;
         for (int iter = 0; iter < 100; iter++) {
@@ -6988,17 +10168,20 @@ private:
             if (maxChg < eps) break;
         }
     }
+
     void factorAnalysis() {
         int lst[FA_MAX_VAR];
         int p = collectVarLists(lst);
         if (p < 2) { DM.notify("Need >=2 lists", C_ERR); return; }
         if (p > FA_MAX_VAR) p = FA_MAX_VAR;
         int n = G.stat[lst[0]].count;
+        if (n < p + 1) { DM.notify("n must be > p", C_ERR); return; }
         char b[8] = "2";
         if (!DM.inputLine("# factors:", b, sizeof(b))) return;
         int k = atoi(b);
         if (k < 1 || k > p) { DM.notify("Invalid k", C_ERR); return; }
         double* X = (double*)malloc(n*p*sizeof(double));
+        if (!X) { DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++)
             for (int j = 0; j < p; j++) X[i*p+j] = G.stat[lst[j]].data[i];
         standardize(X, n, p);
@@ -7007,6 +10190,7 @@ private:
         double eig[FA_MAX_VAR], V[FA_MAX_VAR*FA_MAX_VAR];
         Mat::jacobiEig(R, p, eig, V);
         double* L = (double*)malloc(p*k*sizeof(double));
+        if (!L) { free(X); DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < p; i++)
             for (int f = 0; f < k; f++) L[i*k+f] = V[i*p+f] * sqrt(eig[f] > 0 ? eig[f] : 0);
         varimax(L, p, k);
@@ -7025,6 +10209,7 @@ private:
         free(X); free(L);
         DM.waitEsc();
     }
+
     void kmeans() {
         int lst[FA_MAX_VAR];
         int p = collectVarLists(lst);
@@ -7037,10 +10222,13 @@ private:
         int k = atoi(b);
         if (k < 2 || k > 10) { DM.notify("2..10", C_ERR); return; }
         double* X = (double*)malloc(n*p*sizeof(double));
+        if (!X) { DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++)
             for (int j = 0; j < p; j++) X[i*p+j] = G.stat[lst[j]].data[i];
         double* cent = (double*)malloc(k*p*sizeof(double));
+        if (!cent) { free(X); DM.notify("malloc fail", C_ERR); return; }
         int* assign = (int*)malloc(n*sizeof(int));
+        if (!assign) { free(X); free(cent); DM.notify("malloc fail", C_ERR); return; }
         for (int c = 0; c < k; c++) {
             int idx = (int)((double)esp_random()/4294967296.0 * n);
             for (int j = 0; j < p; j++) cent[c*p+j] = X[idx*p+j];
@@ -7060,6 +10248,7 @@ private:
                 if (it == 0 || assign[i] != bestC) { assign[i] = bestC; changed = true; }
             }
             int* cnt = (int*)calloc(k, sizeof(int));
+            if (!cnt) break;
             for (int c = 0; c < k; c++) for (int j = 0; j < p; j++) cent[c*p+j] = 0;
             for (int i = 0; i < n; i++) {
                 cnt[assign[i]]++;
@@ -7103,6 +10292,7 @@ private:
         DM.waitEsc();
         free(X); free(cent); free(assign);
     }
+
     void hierarchical() {
         int lst[FA_MAX_VAR];
         int p = collectVarLists(lst);
@@ -7114,11 +10304,15 @@ private:
         int k = atoi(b);
         if (k < 2 || k >= n) { DM.notify("Invalid k", C_ERR); return; }
         double* X = (double*)malloc(n*p*sizeof(double));
+        if (!X) { DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++)
             for (int j = 0; j < p; j++) X[i*p+j] = G.stat[lst[j]].data[i];
         int* clust = (int*)malloc(n*sizeof(int));
+        if (!clust) { free(X); DM.notify("malloc fail", C_ERR); return; }
         int* size  = (int*)calloc(n, sizeof(int));
+        if (!size) { free(X); free(clust); DM.notify("malloc fail", C_ERR); return; }
         double* centroid = (double*)malloc(n*p*sizeof(double));
+        if (!centroid) { free(X); free(clust); free(size); DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++) {
             clust[i] = i; size[i] = 1;
             for (int j = 0; j < p; j++) centroid[i*p+j] = X[i*p+j];
@@ -7164,6 +10358,7 @@ private:
         free(X); free(clust); free(size); free(centroid);
         DM.waitEsc();
     }
+
     struct TreeNode {
         int feature;
         double threshold;
@@ -7183,8 +10378,10 @@ private:
         int maxDepth = atoi(b);
         if (maxDepth < 1 || maxDepth > 8) { DM.notify("1..8", C_ERR); return; }
         TreeNode* tree = (TreeNode*)malloc(64*sizeof(TreeNode));
+        if (!tree) { DM.notify("malloc fail", C_ERR); return; }
         int treeN = 0;
         int* idxArr = (int*)malloc(n*sizeof(int));
+        if (!idxArr) { free(tree); DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++) idxArr[i] = i;
         int root = buildTree(tree, treeN, idxArr, n, lst, xCount, yi, 0, maxDepth);
         auto& d = M5Cardputer.Display;
@@ -7204,6 +10401,7 @@ private:
         free(idxArr); free(tree);
         DM.waitEsc();
     }
+
     int buildTree(TreeNode* tree, int& treeN, int* idx, int nIdx,
                   int* lst, int xCount, int yi, int depth, int maxDepth) {
         if (treeN >= 60) return -1;
@@ -7242,7 +10440,9 @@ private:
         tree[self].feature = bestF;
         tree[self].threshold = bestT;
         int* leftIdx  = (int*)malloc(nIdx*sizeof(int));
+        if (!leftIdx) return -1;
         int* rightIdx = (int*)malloc(nIdx*sizeof(int));
+        if (!rightIdx) { free(leftIdx); return -1; }
         int nL = 0, nR = 0;
         for (int i = 0; i < nIdx; i++) {
             if (G.stat[lst[bestF]].data[idx[i]] <= bestT) leftIdx[nL++] = idx[i];
@@ -7258,24 +10458,27 @@ private:
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 17 / 20 ─ 層別解析 / 生存分析 / メタアナリシス / 17統計グラフ   ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class StatStrata {
 public:
     void run() {
         const char* items[] = {
             "MH OR + per-stratum + Forest","MH RR + per-stratum + Forest",
-            "Food Poisoning (auto detect)","Cochran's Q (heterogeneity)","Breslow-Day test","Back"
+            "Cochran's Q (heterogeneity)","Breslow-Day test","Back"
         };
-        int s = DM.menu("Stratified", items, 6);
-        if (s < 0 || s == 5) return;
+        for (;;) {
+        int s = DM.menu("Stratified", items, 5);
+        if (s < 0 || s == 4) return;
         switch (s) {
             case 0: mhOR();          break;
             case 1: mhRR();          break;
-            case 2: foodPoisoning(); break;
-            case 3: cochranQ();      break;
-            case 4: breslowDay();    break;
+            case 2: cochranQ();      break;
+            case 3: breslowDay();    break;
+        }
         }
     }
+
+    // Medical Calculator から呼ばれる感染症の要因探索
+    void medicalOutbreak() { outbreakTrace(); }
     static double a_[10], b_[10], c_[10], d_[10];
     static double sOR_[10], sLO_[10], sHI_[10];
     static double sRR_[10], sRRLO_[10], sRRHI_[10];
@@ -7311,6 +10514,7 @@ private:
         }
         return K;
     }
+
     void computePerStratumOR() {
         for (int k = 0; k < K_; k++) {
             double a = a_[k], b = b_[k], c = c_[k], d = d_[k];
@@ -7322,6 +10526,7 @@ private:
             sHI_[k] = exp(lnOR + 1.96*seL);
         }
     }
+
     void computePerStratumRR() {
         for (int k = 0; k < K_; k++) {
             double a = a_[k], b = b_[k], c = c_[k], d = d_[k];
@@ -7334,6 +10539,7 @@ private:
             sRRHI_[k] = exp(lnRR + 1.96*seL);
         }
     }
+
     double computeMHOR(double& mhLO, double& mhHI, double& chiMH, double& pMH) {
         double num = 0, den = 0;
         for (int k = 0; k < K_; k++) {
@@ -7342,6 +10548,7 @@ private:
             num += a_[k]*d_[k]/n;
             den += b_[k]*c_[k]/n;
         }
+        if (den < 1e-12) { mhLO = 0; mhHI = 0; chiMH = 0; pMH = 1; return 0; }
         double OR = num / den;
         double sumP = 0, sumQ = 0, sumR = 0, sumS = 0, sumPR = 0;
         for (int k = 0; k < K_; k++) {
@@ -7368,10 +10575,12 @@ private:
         }
         double diff = fabs(obsA - expA) - 0.5;
         if (diff < 0) diff = 0;
+        if (varA < 1e-12) { chiMH = 0; pMH = 1; return OR; }
         chiMH = (diff*diff) / varA;
         pMH = 1.0 - Dist::chiSquareCDF(chiMH, 1);
         return OR;
     }
+
     double computeMHRR(double& mhLO, double& mhHI) {
         double num = 0, den = 0;
         for (int k = 0; k < K_; k++) {
@@ -7380,6 +10589,7 @@ private:
             num += a_[k]*(c_[k]+d_[k])/n;
             den += c_[k]*(a_[k]+b_[k])/n;
         }
+        if (den < 1e-12) { mhLO = 0; mhHI = 0; return 0; }
         double RR = num / den;
         double V = 0, sumNum = 0, sumDen = 0;
         for (int k = 0; k < K_; k++) {
@@ -7391,13 +10601,16 @@ private:
             sumNum += a_[k]*n0/Tk;
             sumDen += c_[k]*n1/Tk;
         }
-        double var = V / (sumNum * sumDen);
+        double den2 = sumNum * sumDen;
+        if (fabs(den2) < 1e-12 || V <= 0) { mhLO = RR; mhHI = RR; return RR; }
+        double var = V / den2;
         double seL = sqrt(var);
         double lo = exp(log(RR) - 1.96*seL);
         double hi = exp(log(RR) + 1.96*seL);
         mhLO = lo; mhHI = hi;
         return RR;
     }
+
     void computeBreslowDay(double commonOR, double& X2, double& pBD) {
         X2 = 0;
         for (int k = 0; k < K_; k++) {
@@ -7416,6 +10629,7 @@ private:
         }
         pBD = 1.0 - Dist::chiSquareCDF(X2, K_ - 1);
     }
+
     void mhOR() {
         if (strataInput(true) == 0) return;
         computePerStratumOR();
@@ -7427,6 +10641,7 @@ private:
         computeBreslowDay(commonVal, X2_BD, p_BD);
         showStratifiedResult("Mantel-Haenszel OR", "OR", chiMH, pMH, X2_BD, p_BD);
     }
+
     void mhRR() {
         if (strataInput(true) == 0) return;
         computePerStratumRR();
@@ -7451,129 +10666,211 @@ private:
         }
         double diff = fabs(obsA - expA) - 0.5;
         if (diff < 0) diff = 0;
-        chiMH = (diff*diff) / varA;
-        pMH = 1.0 - Dist::chiSquareCDF(chiMH, 1);
+        if (varA < 1e-12) { chiMH = 0; pMH = 1; }
+        else { chiMH = (diff*diff) / varA; pMH = 1.0 - Dist::chiSquareCDF(chiMH, 1); }
         computeBreslowDay(commonVal, X2_BD, p_BD);
         showStratifiedResult("Mantel-Haenszel RR", "RR", chiMH, pMH, X2_BD, p_BD);
     }
-    void foodPoisoning() {
+
+    void outbreakTrace() {
         auto& d = M5Cardputer.Display;
-        d.fillScreen(C_BG); DM.header("Food Poisoning Trace"); DM.footer("","","ESC:next");
+        d.fillScreen(C_BG);
+        DM.header("Outbreak / Source Trace");
+        DM.footer("","","ESC:next");
         d.setTextColor(C_FG, C_BG);
         d.drawString("Setup:", 4, HDR_H + 4);
         d.setTextColor(C_DIM, C_BG);
-        d.drawString("L1..L5: foods (0/1)", 4, HDR_H + 16);
-        d.drawString("L6: illness (0/1)", 4, HDR_H + 28);
-        d.drawString("All same length needed", 4, HDR_H + 40);
+        d.drawString("Exposure lists: 0/1 binary", 4, HDR_H + 16);
+        d.drawString("Outcome list: select next", 4, HDR_H + 28);
+        d.drawString("Same length required", 4, HDR_H + 40);
         d.setTextColor(C_FG, C_BG);
         d.drawString("Press any key...", 4, HDR_H + 56);
         DM.waitEsc();
-        int illL = 5;
-        int N = G.stat[illL].count;
-        if (N < 4) { DM.notify("L6 too small", C_ERR); return; }
-        struct FoodResult {
+        const char* items[STAT_LISTS]; for (int _i = 0; _i < STAT_LISTS; _i++) items[_i] = statLbl(_i);
+        int outL = DM.menu("Outcome list?", items, STAT_LISTS);
+        if (outL < 0) return;
+        int N = G.stat[outL].count;
+        if (N < 4) { DM.notify("Outcome too small", C_ERR); return; }
+        // --- Binary (0/1) validation: Outcome ---
+        for (int i = 0; i < N; i++) {
+            double v = G.stat[outL].data[i];
+            if (v != 0.0 && v != 1.0) {
+                DM.notify("Outcome not 0/1", C_ERR, 1500);
+                return;
+            }
+        }
+        // --- Binary (0/1) validation: Exposures ---
+        for (int li = 0; li < STAT_LISTS; li++) {
+            if (li == outL) continue;
+            if (G.stat[li].count != N) continue;
+            for (int i = 0; i < N; i++) {
+                double v = G.stat[li].data[i];
+                if (v != 0.0 && v != 1.0) {
+                    char m[40]; snprintf(m, sizeof(m), "L%d not 0/1", li+1);
+                    DM.notify(m, C_ERR, 1500);
+                    return;
+                }
+            }
+        }
+        // Fisher's exact test 2x2 (two-sided) via lgamma
+        auto fisher2x2 = [](int a, int b, int c, int d) -> double {
+            int n = a + b + c + d;
+            if (n == 0) return 1.0;
+            int r1 = a + b, r2 = c + d;
+            int c1 = a + c;
+            auto lf = [](int x) { return lgamma((double)(x + 1)); };
+            double base = lf(r1) + lf(r2) + lf(c1) + lf(b + d) - lf(n);
+            int kmin = r1 + c1 - n; if (kmin < 0) kmin = 0;
+            int kmax = (r1 < c1) ? r1 : c1;
+            auto lp = [&](int k) {
+                return base - lf(k) - lf(r1 - k) - lf(c1 - k) - lf(r2 - (c1 - k));
+            };
+            double lpo = lp(a);
+            double p = 0;
+            for (int k = kmin; k <= kmax; k++) {
+                double t = lp(k);
+                if (t <= lpo + 1e-9) p += exp(t);
+            }
+            if (p > 1.0) p = 1.0;
+            return p;
+        };
+        struct OutcomeResult {
             int li;
-            double RR, lo, hi;
+            double RR, RRlo, RRhi;
+            double OR, ORlo, ORhi;
             int a, b, c, dCount;
             double pVal;
+            int useFisher;
         };
-        FoodResult res[5];
-        int nFood = 0;
-        for (int li = 0; li < 5; li++) {
+        OutcomeResult res[STAT_LISTS];
+        int nFac = 0;
+        for (int li = 0; li < STAT_LISTS; li++) {
+            if (li == outL) continue;
             if (G.stat[li].count != N) continue;
             int aa = 0, bb = 0, cc = 0, dd = 0;
             for (int i = 0; i < N; i++) {
-                bool ate = (G.stat[li].data[i] != 0);
-                bool ill = (G.stat[illL].data[i] != 0);
-                if (ate && ill)       aa++;
-                else if (ate && !ill) bb++;
-                else if (!ate && ill) cc++;
-                else                  dd++;
+                bool exp_ = (G.stat[li].data[i] != 0);
+                bool ill  = (G.stat[outL].data[i] != 0);
+                if (exp_ && ill)       aa++;
+                else if (exp_ && !ill) bb++;
+                else if (!exp_ && ill) cc++;
+                else                   dd++;
             }
+            if (aa + bb == 0 || cc + dd == 0) continue;
             double a2 = aa, b2 = bb, c2 = cc, d2 = dd;
             if (a2==0 || b2==0 || c2==0 || d2==0) { a2+=0.5; b2+=0.5; c2+=0.5; d2+=0.5; }
             double r1 = a2/(a2+b2), r2 = c2/(c2+d2);
             double RR = (r2 > 0) ? r1/r2 : 0;
-            double seL = sqrt(b2/(a2*(a2+b2)) + d2/(c2*(c2+d2)));
-            double lnRR = log(RR);
+            double seL_RR = sqrt(b2/(a2*(a2+b2)) + d2/(c2*(c2+d2)));
+            double lnRR = (RR > 0) ? log(RR) : 0;
+            double OR = (b2*c2 > 0) ? (a2*d2)/(b2*c2) : 0;
+            double seL_OR = sqrt(1.0/a2 + 1.0/b2 + 1.0/c2 + 1.0/d2);
+            double lnOR = (OR > 0) ? log(OR) : 0;
             double n_total = aa + bb + cc + dd;
-            double chi = 0;
+            // Expected counts & auto Fisher switch
+            int useFisher = 0;
+            double chi = 0, pp = 1.0;
             if (n_total > 0) {
                 double E11 = (double)(aa+bb)*(aa+cc)/n_total;
                 double E12 = (double)(aa+bb)*(bb+dd)/n_total;
                 double E21 = (double)(cc+dd)*(aa+cc)/n_total;
                 double E22 = (double)(cc+dd)*(bb+dd)/n_total;
+                if (E11<5 || E12<5 || E21<5 || E22<5) useFisher = 1;
                 if (E11>0) chi += pow(fabs(aa-E11)-0.5, 2)/E11;
                 if (E12>0) chi += pow(fabs(bb-E12)-0.5, 2)/E12;
                 if (E21>0) chi += pow(fabs(cc-E21)-0.5, 2)/E21;
                 if (E22>0) chi += pow(fabs(dd-E22)-0.5, 2)/E22;
             }
-            double pp = 1.0 - Dist::chiSquareCDF(chi, 1);
-            res[nFood] = {li, RR, exp(lnRR-1.96*seL), exp(lnRR+1.96*seL), aa, bb, cc, dd, pp};
-            nFood++;
+            pp = useFisher ? fisher2x2(aa, bb, cc, dd)
+                           : 1.0 - Dist::chiSquareCDF(chi, 1);
+            res[nFac].li        = li;
+            res[nFac].RR        = RR;
+            res[nFac].RRlo      = (RR > 0) ? exp(lnRR-1.96*seL_RR) : 0;
+            res[nFac].RRhi      = (RR > 0) ? exp(lnRR+1.96*seL_RR) : 0;
+            res[nFac].OR        = OR;
+            res[nFac].ORlo      = (OR > 0) ? exp(lnOR-1.96*seL_OR) : 0;
+            res[nFac].ORhi      = (OR > 0) ? exp(lnOR+1.96*seL_OR) : 0;
+            res[nFac].a         = aa;
+            res[nFac].b         = bb;
+            res[nFac].c         = cc;
+            res[nFac].dCount    = dd;
+            res[nFac].pVal      = pp;
+            res[nFac].useFisher = useFisher;
+            nFac++;
         }
-        if (nFood == 0) { DM.notify("No food data", C_ERR); return; }
-        for (int i = 0; i < nFood-1; i++)
-            for (int j = i+1; j < nFood; j++)
-                if (res[j].RR > res[i].RR) { FoodResult t = res[i]; res[i] = res[j]; res[j] = t; }
-        d.fillScreen(C_BG);
-        DM.header("Food Poisoning - Ranked");
-        DM.footer("F:Forest", "Y:Top RR->Ans", "ESC:back");
-        d.setTextColor(C_DIM, C_BG);
-        d.drawString("Food RR    [95%CI]   p", 4, HDR_H + 2);
-        for (int i = 0; i < nFood && HDR_H + 14 + i*11 < LCD_H - FTR_H - 4; i++) {
-            char l[60];
-            uint16_t col;
-            if (res[i].RR > 2.0 && res[i].pVal < 0.05) col = C_ERR;
-            else if (res[i].RR > 1.5)                  col = C_ACC2;
-            else                                       col = C_FG;
-            d.setTextColor(col, C_BG);
-            snprintf(l, sizeof(l), "L%d %5.2f [%4.2f,%4.2f] %.3f",
-                     res[i].li+1, res[i].RR, res[i].lo, res[i].hi, res[i].pVal);
-            d.drawString(l, 4, HDR_H + 14 + i*11);
-        }
-        d.setTextColor(C_ERR, C_BG);
-        d.drawString("Red: RR>2 & p<0.05 SUSPECT", 4, LCD_H - FTR_H - 14);
-        K_ = nFood;
-        for (int i = 0; i < nFood; i++) {
-            sOR_[i] = res[i].RR;
-            sLO_[i] = res[i].lo;
-            sHI_[i] = res[i].hi;
-            snprintf(strataLabel[i], 16, "L%d", res[i].li+1);
-        }
+        if (nFac == 0) { DM.notify("No valid exposures", C_ERR); return; }
+        if (nFac > 10) nFac = 10;
+        for (int i = 0; i < nFac-1; i++)
+            for (int j = i+1; j < nFac; j++)
+                if (res[j].RR > res[i].RR) { OutcomeResult t = res[i]; res[i] = res[j]; res[j] = t; }
+        int useOR = 0;
+        auto redraw = [&]() {
+            d.fillScreen(C_BG);
+            char hd[40]; snprintf(hd, sizeof(hd), "Outbreak %s (Y=L%d)",
+                                  useOR ? "OR" : "RR", outL+1);
+            DM.header(hd);
+            DM.footer("F:Forest  R:RR/OR", "Y:Top->Ans", "ESC:back");
+            d.setTextColor(C_DIM, C_BG);
+            d.drawString(useOR ? "Exp   OR    [95%CI]   p" : "Exp   RR    [95%CI]   p",
+                         4, HDR_H + 2);
+            for (int i = 0; i < nFac && HDR_H + 14 + i*11 < LCD_H - FTR_H - 4; i++) {
+                char l[64];
+                uint16_t col;
+                double v  = useOR ? res[i].OR  : res[i].RR;
+                double lo = useOR ? res[i].ORlo : res[i].RRlo;
+                double hi = useOR ? res[i].ORhi : res[i].RRhi;
+                if (v > 2.0 && res[i].pVal < 0.05) col = C_ERR;
+                else if (v > 1.5)                  col = C_ACC2;
+                else                               col = C_FG;
+                d.setTextColor(col, C_BG);
+                char pstr[12];
+                if (res[i].useFisher) snprintf(pstr, sizeof(pstr), "%.3fF", res[i].pVal);
+                else                  snprintf(pstr, sizeof(pstr), "%.3f",  res[i].pVal);
+                snprintf(l, sizeof(l), "L%d %5.2f [%4.2f,%4.2f] %s",
+                         res[i].li+1, v, lo, hi, pstr);
+                d.drawString(l, 4, HDR_H + 14 + i*11);
+            }
+            d.setTextColor(C_ERR, C_BG);
+            d.drawString(useOR ? "Red: OR>2 & p<0.05  F=Fisher"
+                               : "Red: RR>2 & p<0.05  F=Fisher",
+                         4, LCD_H - FTR_H - 14);
+        };
+        redraw();
+        K_ = nFac;
+        for (int i = 0; i < nFac; i++) snprintf(strataLabel[i], 16, "L%d", res[i].li+1);
         commonVal = 1.0; commonLO = 1.0; commonHI = 1.0;
-        plotKind = 1;
-        if (res[0].RR > 0) G.ans = res[0].RR;
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('y') || M5Cardputer.Keyboard.isKeyPressed('Y')) {
-                DM.notify("Top RR -> Ans", C_OK); return;
+                G.ans = useOR ? res[0].OR : res[0].RR;
+                DM.notify(useOR ? "Top OR -> Ans" : "Top RR -> Ans", C_OK);
+                return;
+            }
+            if (M5Cardputer.Keyboard.isKeyPressed('r') || M5Cardputer.Keyboard.isKeyPressed('R')) {
+                useOR = !useOR;
+                redraw();
             }
             if (M5Cardputer.Keyboard.isKeyPressed('f') || M5Cardputer.Keyboard.isKeyPressed('F')) {
-                drawForestPlot("Food Forest (RR)", true);
-                d.fillScreen(C_BG);
-                DM.header("Food Poisoning - Ranked");
-                DM.footer("F:Forest", "Y:Top RR->Ans", "ESC:back");
-                d.setTextColor(C_DIM, C_BG);
-                d.drawString("Food RR    [95%CI]   p", 4, HDR_H + 2);
-                for (int i = 0; i < nFood && HDR_H + 14 + i*11 < LCD_H - FTR_H - 4; i++) {
-                    char l[60];
-                    uint16_t col;
-                    if (res[i].RR > 2.0 && res[i].pVal < 0.05) col = C_ERR;
-                    else if (res[i].RR > 1.5)                  col = C_ACC2;
-                    else                                       col = C_FG;
-                    d.setTextColor(col, C_BG);
-                    snprintf(l, sizeof(l), "L%d %5.2f [%4.2f,%4.2f] %.3f",
-                             res[i].li+1, res[i].RR, res[i].lo, res[i].hi, res[i].pVal);
-                    d.drawString(l, 4, HDR_H + 14 + i*11);
+                if (useOR) {
+                    for (int i = 0; i < nFac; i++) {
+                        sOR_[i] = res[i].OR; sLO_[i] = res[i].ORlo; sHI_[i] = res[i].ORhi;
+                    }
+                    plotKind = 0;
+                    drawForestPlot("Outbreak (OR)", false);
+                } else {
+                    for (int i = 0; i < nFac; i++) {
+                        sOR_[i] = res[i].RR; sLO_[i] = res[i].RRlo; sHI_[i] = res[i].RRhi;
+                    }
+                    plotKind = 1;
+                    drawForestPlot("Outbreak (RR)", false);
                 }
-                d.setTextColor(C_ERR, C_BG);
-                d.drawString("Red: RR>2 & p<0.05 SUSPECT", 4, LCD_H - FTR_H - 14);
+                redraw();
             }
         }
     }
+
     void showStratifiedResult(const char* title, const char* effLabel,
                                double chiMH, double pMH, double X2_BD, double p_BD) {
         int page = 0;
@@ -7637,7 +10934,7 @@ private:
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 if (st.fn && IS_LEFT)  { if (page > 0) { page--; break; } }
                 if (st.fn && IS_RIGHT) { if (page < 2) { page++; break; } }
                 if (M5Cardputer.Keyboard.isKeyPressed('y') || M5Cardputer.Keyboard.isKeyPressed('Y')) {
@@ -7650,6 +10947,7 @@ private:
             }
         }
     }
+
     void drawForestPlot(const char* title, bool showCommon) {
         auto& d = M5Cardputer.Display;
         double logMin = 1e30, logMax = -1e30;
@@ -7662,14 +10960,17 @@ private:
             if (l < logMin) logMin = l;
             if (h > logMax) logMax = h;
         }
+        if (logMin > 1e30 || logMax < -1e30) { DM.notify("No valid data", C_ERR); return; }
         if (0 < logMin) logMin = 0;
         if (0 > logMax) logMax = 0;
         double margin = (logMax - logMin) * 0.1;
         if (margin < 0.1) margin = 0.1;
         logMin -= margin; logMax += margin;
-        d.fillScreen(C_BG);
-        DM.header(title);
-        DM.footer("S:BMP", "", "ESC:back");
+        int totalRows = K_ + (showCommon ? 1 : 0);
+        const int rowsPerPage = 8;
+        int pages = (totalRows + rowsPerPage - 1) / rowsPerPage;
+        if (pages < 1) pages = 1;
+        int page = 0;
         int xLab = 4;
         int xPlot0 = 36;
         int xPlot1 = LCD_W - 4;
@@ -7677,57 +10978,90 @@ private:
         int yTop = HDR_H + 2;
         int yBot = LCD_H - FTR_H - 14;
         int gh = yBot - yTop;
-        int rows = K_ + (showCommon ? 1 : 0);
-        int rh = gh / (rows + 1);
-        if (rh < 6) rh = 6;
+        int rh = gh / (rowsPerPage + 1);
+        if (rh < 10) rh = 10;
         if (rh > 14) rh = 14;
         int xRef = xPlot0 + (int)((0 - logMin)/(logMax - logMin) * gw);
-        for (int yy = yTop; yy < yBot; yy += 4) {
-            d.drawPixel(xRef, yy,     C_DIM);
-            d.drawPixel(xRef, yy + 1, C_DIM);
-        }
-        for (int k = 0; k < K_; k++) {
-            int y = yTop + (k + 1) * rh - rh/2;
-            d.setTextColor(C_FG, C_BG);
-            d.drawString(strataLabel[k], xLab, y - 3);
-            if (sLO_[k] > 0 && sHI_[k] > 0) {
-                int xL = xPlot0 + (int)((log(sLO_[k]) - logMin)/(logMax - logMin) * gw);
-                int xH = xPlot0 + (int)((log(sHI_[k]) - logMin)/(logMax - logMin) * gw);
-                if (xL < xPlot0) xL = xPlot0;
-                if (xH > xPlot1) xH = xPlot1;
-                d.drawLine(xL, y, xH, y, C_ACC);
-                d.drawLine(xL, y - 2, xL, y + 2, C_ACC);
-                d.drawLine(xH, y - 2, xH, y + 2, C_ACC);
-                int xC = xPlot0 + (int)((log(sOR_[k]) - logMin)/(logMax - logMin) * gw);
-                d.fillRect(xC - 2, y - 2, 5, 5, C_OK);
+        auto renderPage = [&](int p) {
+            d.fillScreen(C_BG);
+            char pgStr[20]; snprintf(pgStr, sizeof(pgStr), "%d-%d/%d",
+                p*rowsPerPage + 1,
+                (p*rowsPerPage + rowsPerPage < totalRows) ? p*rowsPerPage + rowsPerPage : totalRows,
+                totalRows);
+            DM.header(title);
+            DM.footer("S:save all", pgStr, "ESC:back");
+            for (int yy = yTop; yy < yBot; yy += 4) {
+                d.drawPixel(xRef, yy,     C_DIM);
+                d.drawPixel(xRef, yy + 1, C_DIM);
+            }
+            int startRow = p * rowsPerPage;
+            int endRow = startRow + rowsPerPage;
+            if (endRow > totalRows) endRow = totalRows;
+            for (int r = startRow; r < endRow; r++) {
+                int y = yTop + (r - startRow + 1) * rh - rh/2;
+                if (r < K_) {
+                    d.setTextColor(C_FG, C_BG);
+                    d.drawString(strataLabel[r], xLab, y - 3);
+                    if (sLO_[r] > 0 && sHI_[r] > 0) {
+                        int xL = xPlot0 + (int)((log(sLO_[r]) - logMin)/(logMax - logMin) * gw);
+                        int xH = xPlot0 + (int)((log(sHI_[r]) - logMin)/(logMax - logMin) * gw);
+                        if (xL < xPlot0) xL = xPlot0;
+                        if (xH > xPlot1) xH = xPlot1;
+                        d.drawLine(xL, y, xH, y, C_ACC);
+                        d.drawLine(xL, y - 2, xL, y + 2, C_ACC);
+                        d.drawLine(xH, y - 2, xH, y + 2, C_ACC);
+                        int xC = xPlot0 + (int)((log(sOR_[r]) - logMin)/(logMax - logMin) * gw);
+                        d.fillRect(xC - 2, y - 2, 5, 5, C_OK);
+                    }
+                } else if (showCommon && r == K_) {
+                    d.setTextColor(C_ACC2, C_BG);
+                    d.drawString("Pool", xLab, y - 3);
+                    if (commonLO > 0 && commonHI > 0) {
+                        int xL = xPlot0 + (int)((log(commonLO) - logMin)/(logMax - logMin) * gw);
+                        int xH = xPlot0 + (int)((log(commonHI) - logMin)/(logMax - logMin) * gw);
+                        int xC = xPlot0 + (int)((log(commonVal) - logMin)/(logMax - logMin) * gw);
+                        d.fillTriangle(xL, y, xC, y - 4, xC, y, C_ACC2);
+                        d.fillTriangle(xH, y, xC, y - 4, xC, y, C_ACC2);
+                        d.fillTriangle(xL, y, xC, y + 4, xC, y, C_ACC2);
+                        d.fillTriangle(xH, y, xC, y + 4, xC, y, C_ACC2);
+                    }
+                }
+            }
+            d.setTextColor(C_DIM, C_BG);
+            char ll[16];
+            snprintf(ll, sizeof(ll), "%.2g", exp(logMin));
+            d.drawString(ll, xPlot0 - 12, yBot + 1);
+            d.drawString("1", xRef - 2, yBot + 1);
+            snprintf(ll, sizeof(ll), "%.2g", exp(logMax));
+            d.drawString(ll, xPlot1 - 18, yBot + 1);
+        };
+        auto saveAllPages = [&]() {
+            unsigned long t = millis();
+            for (int pp = 0; pp < pages; pp++) {
+                renderPage(pp);
+                char path[40]; snprintf(path, sizeof(path), "/forest_%lu_p%d.bmp", t, pp+1);
+                DM.saveBMP(path);
+            }
+            renderPage(page);
+            char m[40]; snprintf(m, sizeof(m), "Saved %d pages", pages);
+            DM.notify(m, C_OK, 1500);
+        };
+        while (true) {
+            renderPage(page);
+            while (true) {
+                if (!DM.pollKeys()) { delay(15); continue; }
+                auto st = M5Cardputer.Keyboard.keysState();
+                if (IS_ESC) return;
+                if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) {
+                    saveAllPages();
+                    break;
+                }
+                if (IS_DOWN) { if (page < pages-1) { page++; break; } }
+                if (IS_UP)   { if (page > 0) { page--; break; } }
             }
         }
-        if (showCommon && commonLO > 0 && commonHI > 0) {
-            int y = yTop + (K_ + 1) * rh - rh/2;
-            d.setTextColor(C_ACC2, C_BG);
-            d.drawString("Pool", xLab, y - 3);
-            int xL = xPlot0 + (int)((log(commonLO) - logMin)/(logMax - logMin) * gw);
-            int xH = xPlot0 + (int)((log(commonHI) - logMin)/(logMax - logMin) * gw);
-            int xC = xPlot0 + (int)((log(commonVal) - logMin)/(logMax - logMin) * gw);
-            d.fillTriangle(xL, y, xC, y - 4, xC, y, C_ACC2);
-            d.fillTriangle(xH, y, xC, y - 4, xC, y, C_ACC2);
-            d.fillTriangle(xL, y, xC, y + 4, xC, y, C_ACC2);
-            d.fillTriangle(xH, y, xC, y + 4, xC, y, C_ACC2);
-        }
-        d.setTextColor(C_DIM, C_BG);
-        char ll[16];
-        snprintf(ll, sizeof(ll), "%.2g", exp(logMin));
-        d.drawString(ll, xPlot0 - 12, yBot + 1);
-        d.drawString("1", xRef - 2, yBot + 1);
-        snprintf(ll, sizeof(ll), "%.2g", exp(logMax));
-        d.drawString(ll, xPlot1 - 18, yBot + 1);
-        while (true) {
-            if (!DM.pollKeys()) { delay(15); continue; }
-            auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
-            if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("forest");
-        }
     }
+
     void cochranQ() {
         char buf[8] = "5";
         if (!DM.inputLine("# studies:", buf, sizeof(buf))) return;
@@ -7758,6 +11092,7 @@ private:
         snprintf(l,sizeof(l),"I2 = %.2f%%", I2);          d.setTextColor(C_OK, C_BG); d.drawString(l, 4, HDR_H+38);
         DM.waitEsc();
     }
+
     void breslowDay() {
         if (strataInput(true) == 0) return;
         double mhLO, mhHI, chiMH, pMH;
@@ -7788,7 +11123,6 @@ char   StatStrata::strataLabel[10][16];
 int    StatStrata::K_ = 0;
 double StatStrata::commonVal, StatStrata::commonLO, StatStrata::commonHI;
 int    StatStrata::plotKind = 0;
-
 class SurvivalAnalysis {
 public:
     void run() {
@@ -7796,6 +11130,7 @@ public:
             "Kaplan-Meier (L1=time L2=event)","Log-rank test (2 groups)",
             "Cox PH (1 covariate)","Median survival","Back"
         };
+        for (;;) {
         int s = DM.menu("Survival", items, 5);
         if (s < 0 || s == 4) return;
         switch (s) {
@@ -7804,13 +11139,16 @@ public:
             case 2: coxPH();       break;
             case 3: medianSurv();  break;
         }
+        }
     }
 private:
     void kaplanMeier() {
         int n = G.stat[0].count;
         if (n < 2 || G.stat[1].count != n) { DM.notify("L1=time L2=event(0/1)", C_ERR); return; }
         double* T = (double*)malloc(n*sizeof(double));
+        if (!T) { DM.notify("malloc fail", C_ERR); return; }
         int*    E = (int*)   malloc(n*sizeof(int));
+        if (!E) { free(T); DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++) { T[i] = G.stat[0].data[i]; E[i] = (G.stat[1].data[i] != 0) ? 1 : 0; }
         for (int i = 1; i < n; i++) {
             double k = T[i]; int ek = E[i]; int j = i - 1;
@@ -7824,6 +11162,7 @@ private:
         int gx = 4, gy = HDR_H + 10, gw = LCD_W - 10, gh = LCD_H - HDR_H - FTR_H - 14;
         d.drawRect(gx, gy, gw, gh, C_DIM);
         double tMax = T[n-1];
+        if (tMax < 1e-12) tMax = 1;
         int prevX = gx, prevY = gy;
         int i = 0;
         while (i < n) {
@@ -7849,10 +11188,11 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("km");
         }
     }
+
     void logRank() {
         int n = G.stat[0].count;
         if (n < 2 || G.stat[1].count != n || G.stat[2].count != n) { DM.notify("L1=t L2=ev L3=grp", C_ERR); return; }
@@ -7885,6 +11225,7 @@ private:
             double v  = (double)dT * (nT_ - dT) * n1 * n2 / ((double)nT_ * nT_ * (nT_ - 1));
             O1 += d1; E1 += e1; V += v;
         }
+        if (V < 1e-15) { DM.notify("Undefined: no variance", C_WARN); return; }
         double chi = (O1 - E1) * (O1 - E1) / V;
         double pp = 1.0 - Dist::chiSquareCDF(chi, 1);
         auto& d = M5Cardputer.Display;
@@ -7896,6 +11237,7 @@ private:
         snprintf(l,sizeof(l),"p  = %.5g", pp);     d.setTextColor(C_OK, C_BG); d.drawString(l, 4, HDR_H+36);
         DM.waitEsc();
     }
+
     void coxPH() {
         int n = G.stat[0].count;
         if (n < 3 || G.stat[1].count != n || G.stat[2].count != n) { DM.notify("L1=t L2=ev L3=x", C_ERR); return; }
@@ -7936,6 +11278,8 @@ private:
             I += sumXX/sum1 - mX*mX;
         }
         double SE = (I > 0) ? 1.0/sqrt(I) : 0;
+        if (SE < 1e-15) { DM.notify("Undefined: no variance", C_WARN); return; }
+        if (!isfinite(beta) || fabs(beta) > 50) { DM.notify("Cox: beta diverged", C_ERR); return; }
         double HR = exp(beta);
         double lo = exp(beta - 1.96*SE), hi = exp(beta + 1.96*SE);
         double z = beta / SE;
@@ -7952,11 +11296,14 @@ private:
         G.ans = HR;
         DM.waitEsc();
     }
+
     void medianSurv() {
         int n = G.stat[0].count;
         if (n < 2 || G.stat[1].count != n) { DM.notify("L1=t L2=ev", C_ERR); return; }
         double* T = (double*)malloc(n*sizeof(double));
+        if (!T) { DM.notify("malloc fail", C_ERR); return; }
         int*    E = (int*)   malloc(n*sizeof(int));
+        if (!E) { free(T); DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++) { T[i] = G.stat[0].data[i]; E[i] = (G.stat[1].data[i] != 0) ? 1 : 0; }
         for (int i = 1; i < n; i++) {
             double k = T[i]; int ek = E[i]; int j = i - 1;
@@ -7993,16 +11340,18 @@ public:
             "Inverse variance (FE/RE)","DerSimonian-Laird (RE)","Forest plot",
             "Funnel plot","Egger's test","Back"
         };
+        for (;;) {
         int s = DM.menu("Meta-Analysis", items, 6);
         if (s < 0 || s == 5) return;
         int K = inputData();
-        if (K < 2) return;
+        if (K < 2) continue;
         switch (s) {
             case 0: invVar(K); break;
             case 1: dlRE(K);   break;
             case 2: forest(K); break;
             case 3: funnel(K); break;
             case 4: egger(K);  break;
+        }
         }
     }
 private:
@@ -8025,11 +11374,13 @@ private:
         }
         return K;
     }
+
     double sumW2(int K) {
         double s = 0;
         for (int i = 0; i < K; i++) s += (1.0/v[i])*(1.0/v[i]);
         return s;
     }
+
     void invVar(int K) {
         double sw = 0, swy = 0;
         for (int i = 0; i < K; i++) { sw += 1.0/v[i]; swy += y[i]/v[i]; }
@@ -8052,6 +11403,7 @@ private:
         snprintf(l,sizeof(l),"tau^2 = %.4g", tau2);      d.drawString(l, 4, HDR_H+66);
         DM.waitEsc();
     }
+
     void dlRE(int K) {
         double sw = 0, swy = 0;
         for (int i = 0; i < K; i++) { sw += 1.0/v[i]; swy += y[i]/v[i]; }
@@ -8077,6 +11429,7 @@ private:
         snprintf(l,sizeof(l),"tau^2 = %.4g  Q=%.3g", tau2, Q); d.drawString(l, 4, HDR_H+38);
         DM.waitEsc();
     }
+
     void forest(int K) {
         double sw = 0, swy = 0;
         for (int i = 0; i < K; i++) { sw += 1.0/v[i]; swy += y[i]/v[i]; }
@@ -8086,12 +11439,13 @@ private:
             double lo = y[i]-1.96*se[i], hi = y[i]+1.96*se[i];
             if (lo < mn) mn = lo; if (hi > mx) mx = hi;
         }
+        if (fabs(mx - mn) < 1e-12) mx = mn + 1;
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Forest Plot"); DM.footer("S:BMP","","ESC:back");
         int x0 = 30, x1 = LCD_W - 6, gw = x1 - x0;
         d.drawFastVLine(x0 + (int)((0 - mn)/(mx - mn) * gw), HDR_H, LCD_H - HDR_H - FTR_H, C_DIM);
         for (int i = 0; i < K; i++) {
-            int yy = HDR_H + 4 + i * ((LCD_H - HDR_H - FTR_H - 16) / K);
+            int rowH2 = ((LCD_H - HDR_H - FTR_H - 16) / K < 8) ? 8 : ((LCD_H - HDR_H - FTR_H - 16) / K); int yy = HDR_H + 4 + i * rowH2; if (yy > LCD_H - FTR_H - 8) continue;
             int xC = x0 + (int)((y[i] - mn)/(mx - mn) * gw);
             int xL = x0 + (int)((y[i]-1.96*se[i] - mn)/(mx - mn) * gw);
             int xH = x0 + (int)((y[i]+1.96*se[i] - mn)/(mx - mn) * gw);
@@ -8110,10 +11464,11 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("forest");
         }
     }
+
     void funnel(int K) {
         double xmin = y[0], xmax = y[0], smax = se[0];
         for (int i = 0; i < K; i++) {
@@ -8132,10 +11487,11 @@ private:
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("funnel");
         }
     }
+
     void egger(int K) {
         if (K < 3) { DM.notify("Egger needs K>=3", C_ERR); return; }
         double sx = 0, sy = 0, sxx = 0, sxy = 0;
@@ -8144,6 +11500,7 @@ private:
             sx += xx; sy += yy; sxx += xx*xx; sxy += xx*yy;
         }
         double dn = K*sxx - sx*sx;
+        if (fabs(dn) < 1e-12) { DM.notify("Undefined: all SE identical", C_ERR); return; }
         double slope = (K*sxy - sx*sy) / dn;
         double intercept = (sy - slope*sx)/K;
         double yMean = sy/K;
@@ -8156,6 +11513,7 @@ private:
         }
         double mse = sse/(K-2);
         double seB = sqrt(mse / dn * K);
+        if (seB < 1e-15) { DM.notify("Undefined: perfect fit", C_WARN); return; }
         double t = intercept / seB;
         double p = 2.0 * (1.0 - Dist::tCDF(fabs(t), K-2));
         auto& d = M5Cardputer.Display;
@@ -8173,15 +11531,7 @@ private:
 
 class StatGraphs {
 public:
-    void run() {
-        const char* items[] = {
-            "Histogram","Box-and-Whisker","Scatter plot","Q-Q plot (vs Normal)",
-            "Bar chart","Pie chart","Line chart","Stem-and-leaf","Pareto chart",
-            "ECDF plot","Density (KDE) approx","Strip chart","Cumulative line",
-            "Mean +/- SD plot","Residuals plot","P-P plot","Multi-line overlay","Back"
-        };
-        int s = DM.menu("Statistical Graphs", items, 18);
-        if (s < 0 || s == 17) return;
+    void showGraph(int s) {
         switch (s) {
             case 0:  histogram();        break;
             case 1:  boxplot();          break;
@@ -8202,24 +11552,41 @@ public:
             case 16: multiLine();        break;
         }
     }
+
+    void run() {
+        const char* items[] = {
+            "Histogram","Box-and-Whisker","Scatter plot","Q-Q plot (vs Normal)",
+            "Bar chart","Pie chart","Line chart","Stem-and-leaf","Pareto chart",
+            "ECDF plot","Density (KDE) approx","Strip chart","Cumulative line",
+            "Mean +/- SD plot","Residuals plot","P-P plot","Multi-line overlay","Back"
+        };
+        for (;;) {
+        int s = DM.menu("Statistical Graphs", items, 18);
+        if (s < 0 || s == 17) return;
+        showGraph(s);
+        }
+    }
 private:
     int pickList(const char* title) {
-        const char* it[] = {"L1","L2","L3","L4","L5","L6","L7","L8"};
+        const char* it[STAT_LISTS]; for (int _i = 0; _i < STAT_LISTS; _i++) it[_i] = statLbl(_i);
         return DM.menu(title, it, STAT_LISTS);
     }
+
     void afterPlot(const char* prefix) {
         DM.footer("S:BMP","","ESC:back");
         while (true) {
             if (!DM.pollKeys()) { delay(15); continue; }
             auto st = M5Cardputer.Keyboard.keysState();
-            if (st.fn && IS_ESC) return;
+            if (IS_ESC) return;
             if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto(prefix);
         }
     }
+
     void getRange(double* a, int n, double& mn, double& mx) {
         mn = a[0]; mx = a[0];
         for (int i = 1; i < n; i++) { if (a[i] < mn) mn = a[i]; if (a[i] > mx) mx = a[i]; }
     }
+
     void histogram() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count; if (n < 2) { DM.notify("n<2", C_ERR); return; }
@@ -8228,6 +11595,7 @@ private:
         double mn, mx; getRange(G.stat[li].data, n, mn, mx);
         double w = (mx - mn) / nb; if (w == 0) w = 1;
         int* h = (int*)calloc(nb, sizeof(int));
+        if (!h) { DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++) {
             int bin = (int)((G.stat[li].data[i] - mn)/w);
             if (bin == nb) bin = nb - 1;
@@ -8245,10 +11613,12 @@ private:
         free(h);
         afterPlot("hist");
     }
+
     void boxplot() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count; if (n < 4) { DM.notify("n<4", C_ERR); return; }
         double* tmp = (double*)malloc(n*sizeof(double));
+        if (!tmp) { DM.notify("malloc fail", C_ERR); return; }
         memcpy(tmp, G.stat[li].data, n*sizeof(double));
         for (int i = 1; i < n; i++) { double k=tmp[i]; int j=i-1;
             while (j>=0 && tmp[j]>k){tmp[j+1]=tmp[j];j--;} tmp[j+1]=k; }
@@ -8260,6 +11630,7 @@ private:
         for (int i = 0; i < n; i++) if (tmp[i] >= w_l) { lw = tmp[i]; break; }
         for (int i = n-1; i >= 0; i--) if (tmp[i] <= w_h) { uw = tmp[i]; break; }
         double mn = tmp[0], mx = tmp[n-1];
+        if (fabs(mx - mn) < 1e-12) mx = mn + 1;
         free(tmp);
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Boxplot");
@@ -8273,29 +11644,52 @@ private:
         d.drawLine(sx(uw), gy-6, sx(uw), gy+6, C_DIM);
         afterPlot("box");
     }
+
     void scatter() {
         int xi = pickList("X?"); if (xi < 0) return;
         int yi = pickList("Y?"); if (yi < 0) return;
         int n = G.stat[xi].count;
         if (G.stat[yi].count != n) { DM.notify("Mismatch", C_ERR); return; }
+        int regOn = DM.confirm("Overlay regression?");
         double xmn, xmx, ymn, ymx;
         getRange(G.stat[xi].data, n, xmn, xmx);
         getRange(G.stat[yi].data, n, ymn, ymx);
+        double slope = 0, intercept = 0;
+        if (regOn && n >= 2) {
+            double sx=0, sy=0, sxx=0, sxy=0;
+            for (int i = 0; i < n; i++) {
+                double xv = G.stat[xi].data[i], yv = G.stat[yi].data[i];
+                sx += xv; sy += yv; sxx += xv*xv; sxy += xv*yv;
+            }
+            double dn = n*sxx - sx*sx;
+            if (fabs(dn) > 1e-12) {
+                slope = (n*sxy - sx*sy) / dn;
+                intercept = (sy - slope*sx) / n;
+                double y0 = intercept + slope*xmn, y1 = intercept + slope*xmx;
+                if (y0 < ymn) ymn = y0; if (y0 > ymx) ymx = y0;
+                if (y1 < ymn) ymn = y1; if (y1 > ymx) ymx = y1;
+            } else regOn = 0;
+        }
         auto& d = M5Cardputer.Display;
-        d.fillScreen(C_BG); DM.header("Scatter");
+        d.fillScreen(C_BG); DM.header(regOn ? "Scatter + regression" : "Scatter");
         int gx = 4, gy = HDR_H + 4, gw = LCD_W - 8, gh = LCD_H - HDR_H - FTR_H - 8;
         d.drawRect(gx, gy, gw, gh, C_DIM);
-        for (int i = 0; i < n; i++) {
-            int px = gx + (int)((G.stat[xi].data[i] - xmn)/(xmx - xmn + 1e-12) * (gw - 4)) + 2;
-            int py = gy + gh - 2 - (int)((G.stat[yi].data[i] - ymn)/(ymx - ymn + 1e-12) * (gh - 4));
-            d.fillCircle(px, py, 1, C_ACC);
+        auto sx_ = [&](double xv) { return gx + (int)((xv - xmn)/(xmx - xmn + 1e-12) * (gw - 4)) + 2; };
+        auto sy_ = [&](double yv) { return gy + gh - 2 - (int)((yv - ymn)/(ymx - ymn + 1e-12) * (gh - 4)); };
+        for (int i = 0; i < n; i++) d.fillCircle(sx_(G.stat[xi].data[i]), sy_(G.stat[yi].data[i]), 1, C_ACC);
+        if (regOn) {
+            d.drawLine(sx_(xmn), sy_(intercept + slope*xmn), sx_(xmx), sy_(intercept + slope*xmx), C_ERR);
+            char ln[40]; snprintf(ln, sizeof(ln), "y=%.4gx+%.4g", slope, intercept);
+            d.setTextColor(C_ERR, C_BG); d.drawString(ln, gx + 4, gy + 2);
         }
         afterPlot("scatter");
     }
+
     void qqPlot() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count; if (n < 4) { DM.notify("n<4", C_ERR); return; }
         double* tmp = (double*)malloc(n*sizeof(double));
+        if (!tmp) { DM.notify("malloc fail", C_ERR); return; }
         memcpy(tmp, G.stat[li].data, n*sizeof(double));
         for (int i = 1; i < n; i++) { double k=tmp[i]; int j=i-1;
             while (j>=0 && tmp[j]>k){tmp[j+1]=tmp[j];j--;} tmp[j+1]=k; }
@@ -8316,22 +11710,27 @@ private:
         free(tmp);
         afterPlot("qq");
     }
+
     void bar() {
         int li = pickList("Values?"); if (li < 0) return;
         int n = G.stat[li].count;
+        if (n < 1) { DM.notify("Empty list", C_ERR); return; }
         double mx = 0;
         for (int i = 0; i < n; i++) if (fabs(G.stat[li].data[i]) > mx) mx = fabs(G.stat[li].data[i]);
+        if (mx < 1e-12) mx = 1;
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Bar Chart");
         int bw = (LCD_W - 8) / n;
         if (bw < 2) bw = 2;
         int gh = LCD_H - HDR_H - FTR_H - 8;
         for (int i = 0; i < n; i++) {
-            int h = (int)((double)G.stat[li].data[i]/mx * gh);
-            d.fillRect(4 + i*bw, HDR_H + 4 + gh - h, bw - 1, h, C_ACC);
+            int h = (int)(fabs((double)G.stat[li].data[i])/mx * gh);
+            uint16_t col = (G.stat[li].data[i] >= 0) ? C_ACC : C_ERR;
+            d.fillRect(4 + i*bw, HDR_H + 4 + gh - h, bw - 1, h, col);
         }
         afterPlot("bar");
     }
+
     void pie() {
         int li = pickList("Values?"); if (li < 0) return;
         int n = G.stat[li].count;
@@ -8352,9 +11751,11 @@ private:
         }
         afterPlot("pie");
     }
+
     void line() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count;
+        if (n < 2) { DM.notify("n<2 required", C_ERR); return; }
         double mn, mx; getRange(G.stat[li].data, n, mn, mx);
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Line Chart");
@@ -8368,6 +11769,7 @@ private:
         }
         afterPlot("line");
     }
+
     void stemLeaf() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count;
@@ -8382,8 +11784,10 @@ private:
             strcat(line, tmp);
             for (int i = 0; i < n; i++) {
                 int v = (int)round(G.stat[li].data[i]);
-                if (v/10 == stem) {
-                    snprintf(tmp, sizeof(tmp), "%d", v % 10);
+                int av = (v < 0) ? -v : v;
+                if (av/10 == stem) {
+                    char sg = (v < 0) ? (char)45 : (char)32;
+                    snprintf(tmp, sizeof(tmp), "%c%d", sg, av % 10);
                     strncat(line, tmp, sizeof(line)-strlen(line)-1);
                     p++;
                 }
@@ -8392,14 +11796,18 @@ private:
         }
         DM.waitEsc();
     }
+
     void pareto() {
         int li = pickList("Frequencies?"); if (li < 0) return;
         int n = G.stat[li].count;
+        if (n < 1) { DM.notify("Empty list", C_ERR); return; }
         double* a = (double*)malloc(n*sizeof(double));
+        if (!a) { DM.notify("malloc fail", C_ERR); return; }
         memcpy(a, G.stat[li].data, n*sizeof(double));
         for (int i = 1; i < n; i++) { double k=a[i]; int j=i-1;
             while (j>=0 && a[j]<k){a[j+1]=a[j];j--;} a[j+1]=k; }
-        double sum = 0; for (int i = 0; i < n; i++) sum += a[i];
+        double sum = 0, maxAbs = 1; for (int i = 0; i < n; i++) { sum += a[i]; if (fabs(a[i]) > maxAbs) maxAbs = fabs(a[i]); }
+        if (sum < 1e-12) sum = 1;
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Pareto Chart");
         int bw = (LCD_W - 8) / n; if (bw < 2) bw = 2;
@@ -8407,8 +11815,9 @@ private:
         double cum = 0;
         int prevX = -1, prevY = -1;
         for (int i = 0; i < n; i++) {
-            int h = (int)((double)a[i]/a[0] * gh);
-            d.fillRect(4 + i*bw, HDR_H + 4 + gh - h, bw - 1, h, C_ACC);
+            int h = (int)(fabs((double)a[i])/maxAbs * gh);
+            uint16_t col = (a[i] >= 0) ? C_ACC : C_ERR;
+            d.fillRect(4 + i*bw, HDR_H + 4 + gh - h, bw - 1, h, col);
             cum += a[i];
             int cy = HDR_H + 4 + gh - 1 - (int)(cum/sum * (gh - 1));
             int cx = 4 + i*bw + bw/2;
@@ -8418,10 +11827,13 @@ private:
         free(a);
         afterPlot("pareto");
     }
+
     void ecdf() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count;
+        if (n < 2) { DM.notify("n<2 required", C_ERR); return; }
         double* a = (double*)malloc(n*sizeof(double));
+        if (!a) { DM.notify("malloc fail", C_ERR); return; }
         memcpy(a, G.stat[li].data, n*sizeof(double));
         for (int i = 1; i < n; i++) { double k=a[i]; int j=i-1;
             while (j>=0 && a[j]>k){a[j+1]=a[j];j--;} a[j+1]=k; }
@@ -8441,9 +11853,11 @@ private:
         free(a);
         afterPlot("ecdf");
     }
+
     void kde() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count;
+        if (n < 2) { DM.notify("n<2 required", C_ERR); return; }
         double mn, mx; getRange(G.stat[li].data, n, mn, mx);
         double sum = 0, sum2 = 0;
         for (int i = 0; i < n; i++) { sum += G.stat[li].data[i]; sum2 += G.stat[li].data[i]*G.stat[li].data[i]; }
@@ -8457,6 +11871,7 @@ private:
         d.drawRect(gx, gy, gw, gh, C_DIM);
         double maxF = 0;
         double* fv = (double*)malloc(gw*sizeof(double));
+        if (!fv) { DM.notify("malloc fail", C_ERR); return; }
         for (int p = 0; p < gw; p++) {
             double x = mn + (mx - mn) * p / gw;
             double f = 0;
@@ -8478,6 +11893,7 @@ private:
         free(fv);
         afterPlot("kde");
     }
+
     void strip() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count;
@@ -8493,11 +11909,14 @@ private:
         }
         afterPlot("strip");
     }
+
     void cumulative() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count;
+        if (n < 2) { DM.notify("n<2 required", C_ERR); return; }
         double sum = 0; double mx = 0;
         for (int i = 0; i < n; i++) { sum += G.stat[li].data[i]; if (sum > mx) mx = sum; }
+        if (mx < 1e-12) mx = 1;
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Cumulative");
         int gw = LCD_W - 8, gh = LCD_H - HDR_H - FTR_H - 8;
@@ -8505,6 +11924,7 @@ private:
         int prevX = 4, prevY = HDR_H + 4 + gh - 1;
         for (int i = 0; i < n; i++) {
             sum += G.stat[li].data[i];
+            if (isnan(sum) || isinf(sum)) continue;
             int px = 4 + (int)((double)i/(n-1) * (gw - 1));
             int py = HDR_H + 4 + gh - 1 - (int)(sum/mx * (gh - 1));
             d.drawLine(prevX, prevY, px, py, C_ACC);
@@ -8512,6 +11932,7 @@ private:
         }
         afterPlot("cum");
     }
+
     void meanSDPlot() {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Mean +/- SD");
@@ -8532,6 +11953,7 @@ private:
             if (mns[i]-sds[i] < mn) mn = mns[i]-sds[i];
             if (mns[i]+sds[i] > mx) mx = mns[i]+sds[i];
         }
+        if (fabs(mx - mn) < 1e-12) mx = mn + 1;
         int gh = LCD_H - HDR_H - FTR_H - 8;
         for (int i = 0; i < valid; i++) {
             int px = 20 + i * 30;
@@ -8545,20 +11967,57 @@ private:
         }
         afterPlot("msd");
     }
+
     void residualPlot() {
         if (G.stat[0].count < 2 || G.stat[1].count != G.stat[0].count) { DM.notify("Need L1,L2", C_ERR); return; }
-        scatter();
+        int n = G.stat[0].count;
+        double* X = G.stat[0].data;
+        double* Y = G.stat[1].data;
+        double sx=0, sy=0, sxx=0, sxy=0;
+        for (int i = 0; i < n; i++) { sx += X[i]; sy += Y[i]; sxx += X[i]*X[i]; sxy += X[i]*Y[i]; }
+        double dn2 = n*sxx - sx*sx;
+        if (fabs(dn2) < 1e-12) { DM.notify("Sxx=0", C_ERR); return; }
+        double b = (n*sxy - sx*sy) / dn2;
+        double a = (sy - b*sx) / n;
+        double* res = (double*)malloc(n*sizeof(double));
+        if (!res) { DM.notify("malloc fail", C_ERR); return; }
+        double rmn = INFINITY, rmx = -INFINITY;
+        double xmn = X[0], xmx = X[0];
+        for (int i = 0; i < n; i++) {
+            res[i] = Y[i] - (a + b*X[i]);
+            if (res[i] < rmn) rmn = res[i];
+            if (res[i] > rmx) rmx = res[i];
+            if (X[i] < xmn) xmn = X[i];
+            if (X[i] > xmx) xmx = X[i];
+        }
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Residuals vs X");
+        int gx = 4, gy = HDR_H + 4, gw = LCD_W - 8, gh = LCD_H - HDR_H - FTR_H - 8;
+        d.drawRect(gx, gy, gw, gh, C_DIM);
+        if (rmn < 0 && rmx > 0) {
+            int yZero = gy + gh - 2 - (int)((0 - rmn)/(rmx - rmn + 1e-12) * (gh - 4));
+            d.drawLine(gx, yZero, gx + gw, yZero, C_GRID);
+        }
+        for (int i = 0; i < n; i++) {
+            int px = gx + (int)((X[i] - xmn)/(xmx - xmn + 1e-12) * (gw - 4)) + 2;
+            int py = gy + gh - 2 - (int)((res[i] - rmn)/(rmx - rmn + 1e-12) * (gh - 4));
+            d.fillCircle(px, py, 1, C_ACC);
+        }
+        free(res);
+        afterPlot("resid");
     }
+
     void ppPlot() {
         int li = pickList("List?"); if (li < 0) return;
         int n = G.stat[li].count;
         double* a = (double*)malloc(n*sizeof(double));
+        if (!a) { DM.notify("malloc fail", C_ERR); return; }
         memcpy(a, G.stat[li].data, n*sizeof(double));
         for (int i = 1; i < n; i++) { double k=a[i]; int j=i-1;
             while (j>=0 && a[j]>k){a[j+1]=a[j];j--;} a[j+1]=k; }
         double sum = 0, sum2 = 0;
         for (int i = 0; i < n; i++) { sum += a[i]; sum2 += a[i]*a[i]; }
-        double m = sum/n, sd = sqrt((sum2 - n*m*m)/(n-1));
+        double m = sum/n, sd = sqrt((sum2 - n*m*m)/(n-1)); if (sd < 1e-12) { DM.notify("PP: zero variance", C_ERR); free(a); return; }
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("P-P Plot");
         int gx = 4, gy = HDR_H + 4, gw = LCD_W - 8, gh = LCD_H - HDR_H - FTR_H - 8;
@@ -8574,6 +12033,7 @@ private:
         free(a);
         afterPlot("pp");
     }
+
     void multiLine() {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Multi-line");
@@ -8608,9 +12068,9 @@ private:
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 18 / 20 ─ μLisp (GC + map/filter/reduce/apply 追加)             ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
+void statGraphShow(int kind) { gStatGraphs.showGraph(kind); }
+void statGraphMenu() { gStatGraphs.run(); }
 namespace ULisp {
-
 enum CellType : uint8_t {
     T_NIL = 0, T_NUM, T_SYM, T_STR, T_CONS, T_LAMBDA, T_BUILTIN, T_BOOL_T
 };
@@ -8618,7 +12078,6 @@ enum CellType : uint8_t {
 struct Cell;
 typedef Cell* CellRef;
 struct Env;
-
 struct Cell {
     CellType type;
     bool     marked;
@@ -8639,9 +12098,7 @@ static Cell* freeList = nullptr;
 static bool  gcInProgress = false;
 static CellRef nilC = nullptr;
 static CellRef trueC = nullptr;
-
 void gc();   // ← この1行を追加
-
 inline CellRef alloc() {
     if (freeList) {
         CellRef c = freeList;
@@ -8653,9 +12110,9 @@ inline CellRef alloc() {
     if (poolUsed >= ULISP_CELLS) return nullptr;
     return &pool[poolUsed++];
 }
+
 static char errMsg[64] = "";
 inline void setErr(const char* m) { strncpy(errMsg, m, 63); errMsg[63] = 0; }
-
 inline CellRef mkNum(double v) { CellRef c = alloc(); if (!c) return nilC; c->type = T_NUM; c->num = v; return c; }
 inline CellRef mkSym(const char* s) {
     CellRef c = alloc(); if (!c) return nilC;
@@ -8666,6 +12123,7 @@ inline CellRef mkSym(const char* s) {
     c->type = T_SYM; c->sym = tmp;
     return c;
 }
+
 inline CellRef mkStr(const char* s) {
     CellRef c = alloc(); if (!c) return nilC;
     int n = strlen(s) + 1;
@@ -8675,16 +12133,18 @@ inline CellRef mkStr(const char* s) {
     c->type = T_STR; c->str = tmp;
     return c;
 }
+
 inline CellRef mkCons(CellRef a, CellRef d) {
     CellRef c = alloc(); if (!c) return nilC;
     c->type = T_CONS; c->cons.car = a; c->cons.cdr = d; return c;
 }
+
 inline CellRef mkBuiltin(CellRef (*fn)(CellRef, Env*)) {
     CellRef c = alloc(); if (!c) return nilC;
     c->type = T_BUILTIN; c->builtin = fn; return c;
 }
-inline bool isNil(CellRef c) { return !c || c == nilC || c->type == T_NIL; }
 
+inline bool isNil(CellRef c) { return !c || c == nilC || c->type == T_NIL; }
 struct EnvEntry { char* name; CellRef val; };
 struct Env {
     EnvEntry e[64];
@@ -8712,10 +12172,10 @@ struct Env {
 
 static Env* envList[128];
 static int  envN = 0;
-
 Env* allocEnv(Env* parent) {
     if (envN >= 128) return nullptr;
     Env* e = new Env();
+    if (!e) return nullptr;
     e->parent = parent;
     envList[envN++] = e;
     return e;
@@ -8724,6 +12184,7 @@ Env* allocEnv(Env* parent) {
 static Env globalEnv;
 static const char* gPos;
 static int parseDepth = 0;
+static int gEvalDepth = 0;
 struct DepthGuard {
     int* d;
     DepthGuard(int* p) : d(p) { (*d)++; }
@@ -8743,10 +12204,8 @@ CellRef eval(CellRef expr, Env* env);
 CellRef applyFn(CellRef fn, CellRef args, Env* env);
 void gc();
 CellRef mkNum(double v);
-
 void markCell(CellRef c);
 void markEnvChain(Env* env);
-
 void markCell(CellRef c) {
     if (!c || c->marked) return;
     c->marked = true;
@@ -8759,6 +12218,7 @@ void markCell(CellRef c) {
         default: break;
     }
 }
+
 void markEnvChain(Env* env) {
     while (env) {
         if (env->marked) return;
@@ -8767,6 +12227,7 @@ void markEnvChain(Env* env) {
         env = env->parent;
     }
 }
+
 void sweepPool() {
     freeList = nullptr;
     for (int i = poolUsed - 1; i >= 0; i--) {
@@ -8779,6 +12240,7 @@ void sweepPool() {
         }
     }
 }
+
 void sweepEnvs() {
     int j = 0;
     for (int i = 0; i < envN; i++) {
@@ -8792,6 +12254,7 @@ void sweepEnvs() {
     }
     envN = j;
 }
+
 void gc() {
     if (gcInProgress) return;
     gcInProgress = true;
@@ -8823,7 +12286,7 @@ CellRef parseAtom() {
 }
 
 CellRef parseList() {
-    if (parseDepth > 200) { setErr("parse too deep"); return nilC; }
+    if (parseDepth > 25) { setErr("parse too deep"); return nilC; }
     DepthGuard guard(&parseDepth);
     skipWS();
     if (!*gPos) { setErr("unexpected EOF"); return nilC; }
@@ -8846,7 +12309,7 @@ CellRef parseString() {
 }
 
 CellRef parseExpr() {
-    if (parseDepth > 200) { setErr("parse too deep"); return nilC; }
+    if (parseDepth > 25) { setErr("parse too deep"); return nilC; }
     DepthGuard guard(&parseDepth);
     skipWS();
     if (!*gPos) return nilC;
@@ -8857,32 +12320,33 @@ CellRef parseExpr() {
 }
 
 CellRef parseStr(const char* s) { gPos = s; return parseExpr(); }
-
 CellRef evalArgs(CellRef args, Env* env) {
     if (isNil(args)) return nilC;
     CellRef head = nilC, tail = nilC;
     while (!isNil(args) && args->type == T_CONS) {
         CellRef v = eval(args->cons.car, env);
         CellRef nc = mkCons(v, nilC);
+        if (isNil(nc)) return head;
         if (isNil(head)) { head = tail = nc; }
         else { tail->cons.cdr = nc; tail = nc; }
         args = args->cons.cdr;
     }
     return head;
 }
-double toD(CellRef c) { if (c && c->type == T_NUM) return c->num; return 0; }
 
-CellRef bAdd(CellRef a, Env* e) { double s = 0; while (!isNil(a)) { s += toD(a->cons.car); a = a->cons.cdr; } return mkNum(s); }
+double toD(CellRef c) { if (c && c->type == T_NUM) return c->num; return 0; }
+CellRef bAdd(CellRef a, Env* e) { double s = 0; while (!isNil(a) && a->type == T_CONS) { s += toD(a->cons.car); a = a->cons.cdr; } return mkNum(s); }
 CellRef bSub(CellRef a, Env* e) {
-    if (isNil(a)) return mkNum(0);
+    if (isNil(a) || a->type != T_CONS) return mkNum(0);
     double s = toD(a->cons.car); a = a->cons.cdr;
     if (isNil(a)) return mkNum(-s);
-    while (!isNil(a)) { s -= toD(a->cons.car); a = a->cons.cdr; }
+    while (!isNil(a) && a->type == T_CONS) { s -= toD(a->cons.car); a = a->cons.cdr; }
     return mkNum(s);
 }
-CellRef bMul(CellRef a, Env* e) { double s = 1; while (!isNil(a)) { s *= toD(a->cons.car); a = a->cons.cdr; } return mkNum(s); }
+
+CellRef bMul(CellRef a, Env* e) { double s = 1; while (!isNil(a) && a->type == T_CONS) { s *= toD(a->cons.car); a = a->cons.cdr; } return mkNum(s); }
 CellRef bDiv(CellRef a, Env* e) {
-    if (isNil(a)) return mkNum(1);
+    if (isNil(a) || a->type != T_CONS) return mkNum(1);
     double s = toD(a->cons.car); a = a->cons.cdr;
     while (!isNil(a) && a->type == T_CONS) {
         double d = toD(a->cons.car);
@@ -8892,18 +12356,20 @@ CellRef bDiv(CellRef a, Env* e) {
     }
     return mkNum(s);
 }
+
 CellRef bMod(CellRef a, Env* e) {
-    if (isNil(a) || isNil(a->cons.cdr)) return nilC;
+    if (isNil(a) || a->type != T_CONS || isNil(a->cons.cdr)) return nilC;
     double d = toD(a->cons.cdr->cons.car);
     if (d == 0) { setErr("mod by zero"); return nilC; }
     return mkNum(fmod(toD(a->cons.car), d));
 }
-CellRef bLT(CellRef a, Env* e) { if (isNil(a) || isNil(a->cons.cdr)) return nilC; return (toD(a->cons.car) <  toD(a->cons.cdr->cons.car)) ? trueC : nilC; }
-CellRef bGT(CellRef a, Env* e) { if (isNil(a) || isNil(a->cons.cdr)) return nilC; return (toD(a->cons.car) >  toD(a->cons.cdr->cons.car)) ? trueC : nilC; }
-CellRef bLE(CellRef a, Env* e) { if (isNil(a) || isNil(a->cons.cdr)) return nilC; return (toD(a->cons.car) <= toD(a->cons.cdr->cons.car)) ? trueC : nilC; }
-CellRef bGE(CellRef a, Env* e) { if (isNil(a) || isNil(a->cons.cdr)) return nilC; return (toD(a->cons.car) >= toD(a->cons.cdr->cons.car)) ? trueC : nilC; }
+
+CellRef bLT(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS || isNil(a->cons.cdr)) return nilC; return (toD(a->cons.car) <  toD(a->cons.cdr->cons.car)) ? trueC : nilC; }
+CellRef bGT(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS || isNil(a->cons.cdr)) return nilC; return (toD(a->cons.car) >  toD(a->cons.cdr->cons.car)) ? trueC : nilC; }
+CellRef bLE(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS || isNil(a->cons.cdr)) return nilC; return (toD(a->cons.car) <= toD(a->cons.cdr->cons.car)) ? trueC : nilC; }
+CellRef bGE(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS || isNil(a->cons.cdr)) return nilC; return (toD(a->cons.car) >= toD(a->cons.cdr->cons.car)) ? trueC : nilC; }
 CellRef bEq(CellRef a, Env* e) {
-    if (isNil(a) || isNil(a->cons.cdr)) return nilC;
+    if (isNil(a) || a->type != T_CONS || isNil(a->cons.cdr)) return nilC;
     CellRef x = a->cons.car, y = a->cons.cdr->cons.car;
     if (!x || !y) return nilC;
     if (x->type != y->type) return nilC;
@@ -8912,26 +12378,28 @@ CellRef bEq(CellRef a, Env* e) {
     if (x->type == T_STR)  return (!strcmp(x->str, y->str)) ? trueC : nilC;
     return (x == y) ? trueC : nilC;
 }
+
 CellRef bCar(CellRef a, Env* e)  { if (isNil(a) || a->type != T_CONS) return nilC; CellRef l = a->cons.car; return (!isNil(l) && l->type == T_CONS) ? l->cons.car : nilC; }
 CellRef bCdr(CellRef a, Env* e)  { if (isNil(a) || a->type != T_CONS) return nilC; CellRef l = a->cons.car; return (!isNil(l) && l->type == T_CONS) ? l->cons.cdr : nilC; }
-CellRef bCons(CellRef a, Env* e) { if (isNil(a) || isNil(a->cons.cdr)) return nilC; return mkCons(a->cons.car, a->cons.cdr->cons.car); }
+CellRef bCons(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS || isNil(a->cons.cdr)) return nilC; return mkCons(a->cons.car, a->cons.cdr->cons.car); }
 CellRef bList(CellRef a, Env* e) { return a; }
 CellRef bNullP(CellRef a, Env* e){ if (isNil(a) || a->type != T_CONS) return trueC; return isNil(a->cons.car) ? trueC : nilC; }
 CellRef bAtomP(CellRef a, Env* e){ if (isNil(a) || a->type != T_CONS) return trueC; CellRef c = a->cons.car; return (isNil(c) || c->type != T_CONS) ? trueC : nilC; }
 CellRef bNumP(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) return nilC; CellRef c = a->cons.car; return (c && c->type == T_NUM) ? trueC : nilC; }
 CellRef bSymP(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) return nilC; CellRef c = a->cons.car; return (c && c->type == T_SYM) ? trueC : nilC; }
-
 CellRef bLength(CellRef a, Env* e) {
     if (isNil(a) || a->type != T_CONS) return mkNum(0);
-    int n = 0; CellRef l = a->cons.car;
-    while (!isNil(l) && l->type == T_CONS) { n++; l = l->cons.cdr; }
+    int n = 0, safety = 10000; CellRef l = a->cons.car;
+    while (!isNil(l) && l->type == T_CONS && safety-- > 0) { n++; l = l->cons.cdr; }
     return mkNum(n);
 }
+
 CellRef bAppend(CellRef a, Env* e) {
     if (isNil(a) || a->type != T_CONS) return nilC;
     CellRef result = nilC, tail = nilC;
     CellRef cur = a;
-    while (!isNil(cur) && cur->type == T_CONS) {
+    int outerSafety = 2000;
+    while (!isNil(cur) && cur->type == T_CONS && outerSafety-- > 0) {
         CellRef item = cur->cons.car;
         bool isLast = isNil(cur->cons.cdr);
         if (isLast) {
@@ -8940,8 +12408,10 @@ CellRef bAppend(CellRef a, Env* e) {
             return result;
         }
         CellRef l = item;
-        while (!isNil(l) && l->type == T_CONS) {
+        int safety = 2000;
+        while (!isNil(l) && l->type == T_CONS && safety-- > 0) {
             CellRef nc = mkCons(l->cons.car, nilC);
+            if (isNil(nc)) return result;
             if (isNil(result)) { result = tail = nc; }
             else { tail->cons.cdr = nc; tail = nc; }
             l = l->cons.cdr;
@@ -8950,12 +12420,14 @@ CellRef bAppend(CellRef a, Env* e) {
     }
     return result;
 }
+
 CellRef bReverse(CellRef a, Env* e) {
     if (isNil(a) || a->type != T_CONS) return nilC;
-    CellRef l = a->cons.car; CellRef r = nilC;
-    while (!isNil(l) && l->type == T_CONS) { r = mkCons(l->cons.car, r); l = l->cons.cdr; }
+    CellRef l = a->cons.car; CellRef r = nilC; int safety = 10000;
+    while (!isNil(l) && l->type == T_CONS && safety-- > 0) { r = mkCons(l->cons.car, r); l = l->cons.cdr; }
     return r;
 }
+
 CellRef bNth(CellRef a, Env* e) {
     if (isNil(a) || isNil(a->cons.cdr)) return nilC;
     int n = (int)toD(a->cons.car);
@@ -8969,7 +12441,7 @@ CellRef bCos(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) { setErr("m
 CellRef bTan(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; } if (!isNil(a->cons.cdr)) { setErr("too many args"); return nilC; } return mkNum(tan(toD(a->cons.car))); }
 CellRef bExp(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; } if (!isNil(a->cons.cdr)) { setErr("too many args"); return nilC; } return mkNum(exp(toD(a->cons.car))); }
 CellRef bLog(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; } if (!isNil(a->cons.cdr)) { setErr("too many args"); return nilC; } return mkNum(log(toD(a->cons.car))); }
-CellRef bSqrt(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; } if (!isNil(a->cons.cdr)) { setErr("too many args"); return nilC; } return mkNum(sqrt(toD(a->cons.car))); }
+CellRef bSqrt(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; } if (!isNil(a->cons.cdr)) { setErr("too many args"); return nilC; } double v = toD(a->cons.car); if (v < 0) { setErr("sqrt(neg)"); return nilC; } return mkNum(sqrt(v)); }
 CellRef bAbs(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; } if (!isNil(a->cons.cdr)) { setErr("too many args"); return nilC; } return mkNum(fabs(toD(a->cons.car))); }
 CellRef bFloor(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; } if (!isNil(a->cons.cdr)) { setErr("too many args"); return nilC; } return mkNum(floor(toD(a->cons.car))); }
 CellRef bCeil(CellRef a, Env* e) { if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; } if (!isNil(a->cons.cdr)) { setErr("too many args"); return nilC; } return mkNum(ceil(toD(a->cons.car))); }
@@ -8981,26 +12453,32 @@ CellRef bMin(CellRef a, Env* e)   {
     while (!isNil(a)) { double v = toD(a->cons.car); if (v < m) m = v; a = a->cons.cdr; }
     return mkNum(m);
 }
+
 CellRef bMax(CellRef a, Env* e) {
     if (isNil(a)) return mkNum(0);
     double m = toD(a->cons.car); a = a->cons.cdr;
     while (!isNil(a)) { double v = toD(a->cons.car); if (v > m) m = v; a = a->cons.cdr; }
     return mkNum(m);
 }
-CellRef bRand(CellRef a, Env* e)  { return mkNum((double)esp_random() / 4294967296.0); }
 
+CellRef bRand(CellRef a, Env* e)  { return mkNum((double)esp_random() / 4294967296.0); }
 CellRef bMean(CellRef a, Env* e) {
+    if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; }
     CellRef l = a->cons.car;
     double s = 0; int n = 0;
     while (!isNil(l) && l->type == T_CONS) { s += toD(l->cons.car); n++; l = l->cons.cdr; }
     return (n > 0) ? mkNum(s/n) : mkNum(0);
 }
+
 CellRef bSum(CellRef a, Env* e) {
+    if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; }
     CellRef l = a->cons.car; double s = 0;
     while (!isNil(l) && l->type == T_CONS) { s += toD(l->cons.car); l = l->cons.cdr; }
     return mkNum(s);
 }
+
 CellRef bSD(CellRef a, Env* e) {
+    if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; }
     CellRef l = a->cons.car;
     double s = 0, s2 = 0; int n = 0;
     while (!isNil(l) && l->type == T_CONS) { double v = toD(l->cons.car); s += v; s2 += v*v; n++; l = l->cons.cdr; }
@@ -9011,6 +12489,7 @@ CellRef bSD(CellRef a, Env* e) {
 
 void printCell(CellRef c, char* buf, int& p, int max);
 CellRef bPrint(CellRef a, Env* e) {
+    if (isNil(a) || a->type != T_CONS) { setErr("missing arg"); return nilC; }
     char buf[256]; int p = 0;
     printCell(a->cons.car, buf, p, 255);
     Serial.println(buf);
@@ -9019,7 +12498,6 @@ CellRef bPrint(CellRef a, Env* e) {
 
 CellRef bSave(CellRef a, Env* e);
 CellRef bLoad(CellRef a, Env* e);
-
 void printCell(CellRef c, char* buf, int& p, int max) {
     if (!buf || max < 2) { if (buf && max >= 1) buf[0] = 0; p = 0; return; }
     auto put = [&](const char* s) {
@@ -9048,18 +12526,23 @@ void printCell(CellRef c, char* buf, int& p, int max) {
     if (c->type == T_CONS) {
         putc1('(');
         bool first = true;
-        while (!isNil(c) && c->type == T_CONS) {
+        int cycGuard = 0;
+        while (!isNil(c) && c->type == T_CONS && cycGuard < 256) {
             if (!first) putc1(' ');
             printCell(c->cons.car, buf, p, max);
             first = false;
             c = c->cons.cdr;
+            cycGuard++;
         }
-        if (!isNil(c)) { put(" . "); printCell(c, buf, p, max); }
+        if (!isNil(c) && c->type == T_CONS) put(" ...");
+        else if (!isNil(c)) { put(" . "); printCell(c, buf, p, max); }
         putc1(')');
     }
 }
 
 CellRef applyFn(CellRef fn, CellRef args, Env* env) {
+    if (gEvalDepth >= POMAS_ULISP_MAX_DEPTH) { setErr("apply depth"); return nilC; }
+    DepthGuard dgA(&gEvalDepth);
     if (!fn) return nilC;
     if (fn->type == T_BUILTIN) return fn->builtin(args, env);
     if (fn->type == T_LAMBDA) {
@@ -9069,6 +12552,7 @@ CellRef applyFn(CellRef fn, CellRef args, Env* env) {
         CellRef a = args;
         while (!isNil(p) && p->type == T_CONS) {
             if (isNil(a)) break;
+            if (!p->cons.car || p->cons.car->type != T_SYM) { setErr("bad lambda param"); return nilC; }
             newEnv->set(p->cons.car->sym, a->cons.car);
             p = p->cons.cdr; a = a->cons.cdr;
         }
@@ -9089,12 +12573,14 @@ CellRef bMap(CellRef a, Env* e) {
     while (!isNil(lst) && lst->type == T_CONS) {
         CellRef v = applyFn(fn, mkCons(lst->cons.car, nilC), e);
         CellRef nc = mkCons(v, nilC);
+        if (isNil(nc)) return head;
         if (isNil(head)) { head = tail = nc; }
         else { tail->cons.cdr = nc; tail = nc; }
         lst = lst->cons.cdr;
     }
     return head;
 }
+
 CellRef bFilter(CellRef a, Env* e) {
     if (isNil(a) || isNil(a->cons.cdr)) return nilC;
     CellRef fn  = a->cons.car;
@@ -9104,6 +12590,7 @@ CellRef bFilter(CellRef a, Env* e) {
         CellRef v = applyFn(fn, mkCons(lst->cons.car, nilC), e);
         if (!isNil(v)) {
             CellRef nc = mkCons(lst->cons.car, nilC);
+            if (isNil(nc)) return head;
             if (isNil(head)) { head = tail = nc; }
             else { tail->cons.cdr = nc; tail = nc; }
         }
@@ -9111,6 +12598,7 @@ CellRef bFilter(CellRef a, Env* e) {
     }
     return head;
 }
+
 CellRef bReduce(CellRef a, Env* e) {
     if (isNil(a) || isNil(a->cons.cdr) || isNil(a->cons.cdr->cons.cdr)) return nilC;
     CellRef fn   = a->cons.car;
@@ -9122,15 +12610,17 @@ CellRef bReduce(CellRef a, Env* e) {
     }
     return acc;
 }
+
 CellRef bApply(CellRef a, Env* e) {
     if (isNil(a) || isNil(a->cons.cdr)) return nilC;
     CellRef fn   = a->cons.car;
     CellRef args = a->cons.cdr->cons.car;
     return applyFn(fn, args, e);
 }
-CellRef bGCCall(CellRef a, Env* e) { gc(); return mkNum((double)poolUsed); }
 
 CellRef eval(CellRef expr, Env* env) {
+    if (gEvalDepth >= POMAS_ULISP_MAX_DEPTH) { setErr("eval depth"); return nilC; }
+    DepthGuard dgE(&gEvalDepth);
     if (isNil(expr)) return nilC;
     if (expr->type == T_NUM)     return expr;
     if (expr->type == T_STR)     return expr;
@@ -9168,6 +12658,12 @@ CellRef eval(CellRef expr, Env* env) {
                 if (isNil(clause) || clause->type != T_CONS) {
                     args = args->cons.cdr;
                     continue;
+                }
+                if (clause->cons.car && clause->cons.car->type == T_SYM && !strcmp(clause->cons.car->sym, "else")) {
+                    CellRef body = clause->cons.cdr;
+                    CellRef r = nilC;
+                    while (!isNil(body) && body->type == T_CONS) { r = eval(body->cons.car, env); body = body->cons.cdr; }
+                    return r;
                 }
                 CellRef test = eval(clause->cons.car, env);
                 if (!isNil(test)) {
@@ -9291,6 +12787,7 @@ CellRef bSave(CellRef a, Env* env) {
     f.close();
     return trueC;
 }
+
 CellRef bLoad(CellRef a, Env* env) {
     if (!G.sdOK) return nilC;
     if (isNil(a) || a->type != T_CONS) return nilC;
@@ -9304,7 +12801,10 @@ CellRef bLoad(CellRef a, Env* env) {
     String content = "";
     while (f.available()) content += (char)f.read();
     f.close();
-    return parseStr(content.c_str());
+    const char* savePos = gPos;
+    CellRef r = parseStr(content.c_str());
+    gPos = savePos;
+    return r;
 }
 
 void initEnv() {
@@ -9363,6 +12863,7 @@ void initEnv() {
 }
 
 void resetPool() {
+    gEvalDepth = 0;
     for (int i = 0; i < poolUsed; i++) {
         if (pool[i].type == T_SYM && pool[i].sym) { free(pool[i].sym); pool[i].sym = nullptr; }
         if (pool[i].type == T_STR && pool[i].str) { free(pool[i].str); pool[i].str = nullptr; }
@@ -9378,9 +12879,7 @@ void resetPool() {
     envN = 0;
     initEnv();
 }
-
 } // namespace ULisp
-
 class ULispMode {
 public:
     void run() {
@@ -9389,6 +12888,7 @@ public:
             "REPL (interactive)","Run script from SD","Run GC now",
             "Reset interpreter","Examples","Back"
         };
+        for (;;) {
         int s = DM.menu("uLisp", items, 6);
         if (s < 0 || s == 5) return;
         switch (s) {
@@ -9404,6 +12904,7 @@ public:
                 if (DM.confirm("Reset uLisp?")) { ULisp::resetPool(); DM.notify("Reset done", C_OK); }
                 break;
             case 4: examples();  break;
+        }
         }
     }
 private:
@@ -9438,7 +12939,7 @@ private:
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 if (st.del) { if (cur > 0) input[--cur] = 0; break; }
                 if (st.enter) {
                     if (input[0] == 0) break;
@@ -9460,12 +12961,16 @@ private:
                     break;
                 }
                 for (auto c : st.word) {
-                    if (cur < 79 && c >= ' ' && c < 127) { input[cur++] = c; input[cur] = 0; }
+                    if (cur < 79 && c >= ' ' && c < 127) {
+                        char cc = (c == '_') ? '-' : ((c == '-') ? '_' : c);
+                        input[cur++] = cc; input[cur] = 0;
+                    }
                 }
                 if (!st.word.empty()) break;
             }
         }
     }
+
     void runFile() {
         if (!G.sdOK) { DM.notify("No SD", C_ERR); return; }
         char path[48] = "/script.lsp";
@@ -9503,6 +13008,7 @@ private:
         d.drawString(b, 4, y);
         DM.waitEsc();
     }
+
     void examples() {
         const char* items[] = {
             "Hello (+ 1 2 3)","Define square","Factorial recursion",
@@ -9537,7 +13043,6 @@ private:
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 19 / 20 ─ グラフエンジン + スプレッドシート                     ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 class GraphEngine {
 public:
     static const int MAXF = 4;
@@ -9549,10 +13054,11 @@ public:
                 "Range / Window","Standard window","Trig window",
                 "Square aspect (1:1)",
                 "G-Solve (root/extrema/intersect)","Tangent / Normal at x",
-                "Save plot as BMP","Back"
+                "Gradient field (F1=f(x,y))","Phase plane (F1=dx/dt,F2=dy/dt)",
+                "Color/Style (per fn)","Inequality intersect","Shape overlay (circle/line/rect)","Param surface x,y,z(u,v)","Save plot as BMP","Back"
             };
-            int s = DM.menu("Graph", items, 11);
-            if (s < 0 || s == 10) return;
+            int s = DM.menu("Graph", items, 17);
+            if (s < 0 || s == 16) return;
             switch (s) {
                 case 0: plot(); break;
                 case 1: editFns(); break;
@@ -9563,18 +13069,222 @@ public:
                 case 6: squareAspectFn(); break;
                 case 7: gsolveMenu(); break;
                 case 8: tanNormal(); break;
-                case 9: { plot(false); DM.saveBMPAuto("graph"); } break;
+                case 9:  drawGradientField(); break;
+                case 10: drawPhasePlane();    break;
+                case 11: editColorStyle(); break;
+                case 12: plotIneqIntersect(); break;
+                case 13: editShapes(); break;
+                case 14: plotParamSurface(); break;
+                case 15: { plot(false); DM.saveBMPAuto("graph"); } break;
             }
         }
     }
+
     char  expr[MAXF][48] = {"sin(x)", "", "", ""};
     bool  active[MAXF]   = {true, false, false, false};
+    uint16_t colorFn[MAXF] = {C_ACC, C_OK, C_ACC2, C_ERR};
+    int      styleFn[MAXF] = {0, 0, 0, 0};
+    static const int SHAPE_MAX = 8;
+    uint8_t shapeK[SHAPE_MAX] = {0};
+    double  shapeP[SHAPE_MAX][4] = {{0}};
+    int     shapeN = 0;
     int   modeT = 0;
     double xmin = -6.28, xmax = 6.28, ymin = -2.5, ymax = 2.5;
     double zmin = -2, zmax = 2;
     double tmin = 0, tmax = 6.28, tstep = 0.05;
     int    seqStart = 1, seqEnd = 30;
+    double vmin = 0, vmax = 6.283185307179586;
+    int    implCell = 2;            // 陰関数: セルサイズ[px] (2..8)
+    int    grid3N = 16;             // 3D: 格子分割数 (6..40)
+    double view3Phi = M_PI/6, view3Theta = M_PI/8;   // 3D視点 (方位角, 仰角)
 private:
+    const char* colorName(uint16_t c) {
+        if (c==C_ACC) return "Mint";
+        if (c==C_OK) return "Green";
+        if (c==C_ACC2) return "DeepMint";
+        if (c==C_ERR) return "Red";
+        if (c==C_WARN) return "Amber";
+        if (c==0x07FF) return "Cyan";
+        return "?";
+    }
+
+    void drawLineStyled(int x0, int y0, int x1, int y1, uint16_t col, int style) {
+        auto& d = M5Cardputer.Display;
+        if (style == 0) { d.drawLine(x0, y0, x1, y1, col); return; }
+        int dx = x1 - x0, dy = y1 - y0;
+        int steps = abs(dx) > abs(dy) ? abs(dx) : abs(dy);
+        if (steps == 0) { d.drawPixel(x0, y0, col); return; }
+        for (int i = 0; i <= steps; i++) {
+            bool skip = (style == 1) ? ((i % 3) != 0) : ((i % 6) >= 3);
+            if (skip) continue;
+            int px = x0 + (int)((long)dx * i / steps);
+            int py = y0 + (int)((long)dy * i / steps);
+            d.drawPixel(px, py, col);
+        }
+    }
+
+    void drawShapes() {
+        auto& d = M5Cardputer.Display;
+        int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
+        auto toPx = [&](double xv, double yv, int& px, int& py) {
+            px = gx + (int)((xv - xmin)/(xmax - xmin) * gw);
+            py = gy + gh - 1 - (int)((yv - ymin)/(ymax - ymin) * gh);
+        };
+        for (int i = 0; i < shapeN; i++) {
+            int p1x, p1y, p2x, p2y;
+            toPx(shapeP[i][0], shapeP[i][1], p1x, p1y);
+            if (shapeK[i] == 1) {
+                int rx = (int)(shapeP[i][2]/(xmax-xmin)*gw);
+                int ry = (int)(shapeP[i][2]/(ymax-ymin)*gh);
+                if (rx < 1) rx = 1;
+                if (ry < 1) ry = 1;
+                d.drawEllipse(p1x, p1y, rx, ry, C_ACC);
+            } else {
+                toPx(shapeP[i][2], shapeP[i][3], p2x, p2y);
+                if (shapeK[i] == 2) d.drawLine(p1x, p1y, p2x, p2y, C_ACC);
+                else { int rx0 = (p1x < p2x) ? p1x : p2x; int ry0 = (p1y < p2y) ? p1y : p2y; d.drawRect(rx0, ry0, abs(p2x - p1x), abs(p2y - p1y), C_ACC); }
+            }
+        }
+    }
+
+    void editShapes() {
+        while (true) {
+            char lb[SHAPE_MAX+3][30];
+            const char* L[SHAPE_MAX+3];
+            for (int i = 0; i < shapeN; i++) {
+                if (shapeK[i] == 1) snprintf(lb[i],30,"C%d(%.3g,%.3g)r%.3g",i+1,shapeP[i][0],shapeP[i][1],shapeP[i][2]);
+                else if (shapeK[i] == 2) snprintf(lb[i],30,"L%d(%.3g,%.3g)-(%.3g,%.3g)",i+1,shapeP[i][0],shapeP[i][1],shapeP[i][2],shapeP[i][3]);
+                else                     snprintf(lb[i],30,"R%d(%.3g,%.3g)-(%.3g,%.3g)",i+1,shapeP[i][0],shapeP[i][1],shapeP[i][2],shapeP[i][3]);
+                L[i] = lb[i];
+            }
+            snprintf(lb[shapeN],30,"+ Circle");
+            snprintf(lb[shapeN+1],30,"+ Line");
+            snprintf(lb[shapeN+2],30,"+ Rect / Clear");
+            L[shapeN]=lb[shapeN]; L[shapeN+1]=lb[shapeN+1]; L[shapeN+2]=lb[shapeN+2];
+            int sel = DM.menu("Shapes", L, shapeN+3);
+            if (sel < 0) return;
+            auto askN = [&](double* a, int n) -> bool {
+                const char* nm[] = {"x1","y1","x2","y2"};
+                char b[24];
+                for (int i = 0; i < n; i++) {
+                    strcpy(b, i<2?"0":"1");
+                    if (!DM.inputLine(nm[i], b, sizeof(b))) return false;
+                    a[i] = atof(b);
+                }
+                return true;
+            };
+            if (sel < shapeN) {
+                if (DM.confirm("Delete?")) {
+                    for (int k = sel; k < shapeN-1; k++) {
+                        shapeK[k]=shapeK[k+1];
+                        for (int j=0;j<4;j++) shapeP[k][j]=shapeP[k+1][j];
+                    }
+                    shapeN--;
+                }
+            } else if (sel == shapeN + 2) {
+                const char* it[] = {"Add rect","Clear all","Cancel"};
+                int s2 = DM.menu("Rect/Clear", it, 3);
+                if (s2 == 0) { if (shapeN < SHAPE_MAX && askN(shapeP[shapeN], 4)) { shapeK[shapeN]=3; shapeN++; } }
+                else if (s2 == 1) shapeN = 0;
+            } else if (shapeN >= SHAPE_MAX) {
+                DM.notify("Shapes full", C_ERR);
+            } else if (sel == shapeN) {
+                if (askN(shapeP[shapeN], 3)) { shapeK[shapeN]=1; shapeN++; }
+            } else if (sel == shapeN+1) {
+                if (askN(shapeP[shapeN], 4)) { shapeK[shapeN]=2; shapeN++; }
+            }
+        }
+    }
+
+    void plotParamSurface() {
+        if (!expr[0][0] || !expr[1][0] || !expr[2][0]) { DM.notify("Set F1=x(u,v), F2=y, F3=z", C_ERR, 1500); return; }
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Param Surface");
+        int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
+        d.drawRect(gx, gy, gw, gh, C_DIM);
+        const int N = grid3N;
+        ExprEval::Subst sub[2] = {{'u',0},{'v',0}};
+        double u0 = tmin, u1 = tmax, v0 = vmin, v1 = vmax;
+        double du = (u1-u0)/N, dv = (v1-v0)/N;
+        double phi = view3Phi, theta = view3Theta;
+        double cp = cos(phi), sp = sin(phi), ct = cos(theta), st_ = sin(theta);
+        sub[0].val = (u0+u1)/2; sub[1].val = (v0+v1)/2;
+        auto rcx = gEv.eval(expr[0], sub, 2);
+        auto rcy = gEv.eval(expr[1], sub, 2);
+        auto rcz = gEv.eval(expr[2], sub, 2);
+        double cx0 = rcx.ok?rcx.val:0, cy0 = rcy.ok?rcy.val:0, cz0 = rcz.ok?rcz.val:0;
+        double ex_=1e-9, ey_=1e-9, ez_=1e-9;
+        for (int i = 0; i <= N; i++) for (int j = 0; j <= N; j++) {
+            sub[0].val = u0 + i*du; sub[1].val = v0 + j*dv;
+            auto r1=gEv.eval(expr[0],sub,2), r2=gEv.eval(expr[1],sub,2), r3=gEv.eval(expr[2],sub,2);
+            if(r1.ok){double a=fabs(r1.val-cx0); if(a>ex_)ex_=a;}
+            if(r2.ok){double a=fabs(r2.val-cy0); if(a>ey_)ey_=a;}
+            if(r3.ok){double a=fabs(r3.val-cz0); if(a>ez_)ez_=a;}
+        }
+        double span = ex_ + ey_ + ez_;
+        double scale = (gw < gh ? gw : gh) / (2.5 * (span + 1e-9));
+        auto project = [&](double xv,double yv,double zv,int& px,int& py){
+            double xr = (xv-cx0)*cp - (yv-cy0)*sp;
+            double yr = (xv-cx0)*sp + (yv-cy0)*cp;
+            double zr = (zv-cz0);
+            px = gx + gw/2 + (int)(xr*scale);
+            py = gy + gh/2 - (int)((-yr*st_ + zr*ct)*scale);
+        };
+        for (int i = 0; i <= N; i++) {
+            int pX=-1, pY=-1; bool ok=false;
+            for (int j = 0; j <= N; j++) {
+                sub[0].val = u0 + i*du; sub[1].val = v0 + j*dv;
+                auto r1=gEv.eval(expr[0],sub,2), r2=gEv.eval(expr[1],sub,2), r3=gEv.eval(expr[2],sub,2);
+                if(!r1.ok||!r2.ok||!r3.ok||isnan(r1.val)||isnan(r2.val)||isnan(r3.val)||isinf(r1.val)||isinf(r2.val)||isinf(r3.val)){ok=false;continue;}
+                int px,py; project(r1.val,r2.val,r3.val,px,py);
+                if(ok) d.drawLine(pX,pY,px,py,C_ACC);
+                pX=px; pY=py; ok=true;
+            }
+        }
+        for (int j = 0; j <= N; j++) {
+            int pX=-1, pY=-1; bool ok=false;
+            for (int i = 0; i <= N; i++) {
+                sub[0].val = u0 + i*du; sub[1].val = v0 + j*dv;
+                auto r1=gEv.eval(expr[0],sub,2), r2=gEv.eval(expr[1],sub,2), r3=gEv.eval(expr[2],sub,2);
+                if(!r1.ok||!r2.ok||!r3.ok||isnan(r1.val)||isnan(r2.val)||isnan(r3.val)||isinf(r1.val)||isinf(r2.val)||isinf(r3.val)){ok=false;continue;}
+                int px,py; project(r1.val,r2.val,r3.val,px,py);
+                if(ok) d.drawLine(pX,pY,px,py,C_OK);
+                pX=px; pY=py; ok=true;
+            }
+        }
+        DM.footer("fn+arrows:rotate", "S:save", "ESC:back");
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (st.fn && IS_LEFT)  { view3Phi -= 0.15; break; }
+            if (st.fn && IS_RIGHT) { view3Phi += 0.15; break; }
+            if (st.fn && IS_UP)    { view3Theta += 0.1; if(view3Theta>1.5)view3Theta=1.5; break; }
+            if (st.fn && IS_DOWN)  { view3Theta -= 0.1; if(view3Theta<-0.2)view3Theta=-0.2; break; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("psurf");
+        }
+    }
+
+    void editColorStyle() {
+        const char* labels[MAXF];
+        char buf[MAXF][40];
+        for (int i = 0; i < MAXF; i++) {
+            const char* cn = colorName(colorFn[i]);
+            const char* sn = (styleFn[i]==0)?"solid":(styleFn[i]==1?"dot":"dash");
+            snprintf(buf[i], sizeof(buf[i]), "F%d %s %s", i+1, cn, sn);
+            labels[i] = buf[i];
+        }
+        int s = DM.menu("Color/Style", labels, MAXF);
+        if (s < 0) return;
+        const char* cn[] = {"Mint","Green","DeepMint","Red","Amber","Cyan"};
+        uint16_t cv[] = {C_ACC, C_OK, C_ACC2, C_ERR, C_WARN, 0x07FF};
+        int c = DM.menu("Color", cn, 6);
+        if (c >= 0) colorFn[s] = cv[c];
+        const char* sn[] = {"Solid","Dotted","Dashed"};
+        int st = DM.menu("Style", sn, 3);
+        if (st >= 0) styleFn[s] = st;
+    }
+
     int  pickType() {
         const char* items[] = {
             "y = f(x)","Parametric x(t),y(t)","Polar r=f(t)",
@@ -9584,6 +13294,7 @@ private:
         if (s >= 0 && s < 7) modeT = s;
         return s;
     }
+
     void editFns() {
         const char* labels[MAXF];
         char buf[MAXF][56];
@@ -9601,12 +13312,15 @@ private:
             active[s] = (e[0] != 0);
         }
     }
+
     void editRange() {
         char b[24];
         snprintf(b, sizeof(b), "%g", xmin); if (!DM.inputLine("xmin:", b, sizeof(b))) return; xmin = atof(b);
         snprintf(b, sizeof(b), "%g", xmax); if (!DM.inputLine("xmax:", b, sizeof(b))) return; xmax = atof(b);
         snprintf(b, sizeof(b), "%g", ymin); if (!DM.inputLine("ymin:", b, sizeof(b))) return; ymin = atof(b);
         snprintf(b, sizeof(b), "%g", ymax); if (!DM.inputLine("ymax:", b, sizeof(b))) return; ymax = atof(b);
+        if (xmin >= xmax) { double t = xmin; xmin = xmax; xmax = t; }
+        if (ymin >= ymax) { double t = ymin; ymin = ymax; ymax = t; }
         if (modeT == 1 || modeT == 2) {
             snprintf(b, sizeof(b), "%g", tmin); if (!DM.inputLine("tmin:", b, sizeof(b))) return; tmin = atof(b);
             snprintf(b, sizeof(b), "%g", tmax); if (!DM.inputLine("tmax:", b, sizeof(b))) return; tmax = atof(b);
@@ -9620,9 +13334,16 @@ private:
         if (modeT == 6) {
             snprintf(b, sizeof(b), "%g", zmin); if (!DM.inputLine("zmin:", b, sizeof(b))) return; zmin = atof(b);
             snprintf(b, sizeof(b), "%g", zmax); if (!DM.inputLine("zmax:", b, sizeof(b))) return; zmax = atof(b);
+            snprintf(b, sizeof(b), "%d", grid3N); if (!DM.inputLine("grid N (6-40):", b, sizeof(b))) return;
+            grid3N = atoi(b); if (grid3N < 6) grid3N = 6; if (grid3N > 40) grid3N = 40;
+        }
+        if (modeT == 3) {
+            snprintf(b, sizeof(b), "%d", implCell); if (!DM.inputLine("px/cell (2-8):", b, sizeof(b))) return;
+            implCell = atoi(b); if (implCell < 2) implCell = 2; if (implCell > 8) implCell = 8;
         }
     }
-    void stdWindow()  { xmin=-10; xmax=10; ymin=-10; ymax=10; tmin=0; tmax=6.28; tstep=0.05; DM.notify("Std", C_OK); }
+
+    void stdWindow()  { xmin=-10; xmax=10; ymin=-10; ymax=10; tmin=0; tmax=6.28; tstep=0.05; view3Phi = M_PI/6; view3Theta = M_PI/8; DM.notify("Std", C_OK); }
     void squareAspectFn() {
         double cx = (xmin + xmax) / 2;
         double cy = (ymin + ymax) / 2;
@@ -9635,6 +13356,7 @@ private:
         ymax = cy + ySpan/2;
         DM.notify("Square aspect set", C_OK);
     }
+
     void trigWindow() { xmin=-2*M_PI; xmax=2*M_PI; ymin=-1.5; ymax=1.5; DM.notify("Trig", C_OK); }
     void plot(bool interactive = true) {
         bool any = false;
@@ -9648,11 +13370,12 @@ private:
             drawAll();
             if (traceOn && modeT == 0) drawTraceMarker(traceFn, tcur);
             if (!interactive) return;
-            DM.footer("Z:in X:out R:reset T:trace", "B:box +:next", "ESC:back");
+            if (modeT == 6) DM.footer("fn+arrows:rotate", "Z X R P:prm", "ESC:back");
+            else            DM.footer("Z:in X:out R:rst T:trc", "B:box P:prm +:nx", "ESC:back");
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 if (!st.word.empty()) {
                     char c = st.word[0];
                     if (c == 'z' || c == 'Z') { zoomIn();  break; }
@@ -9660,6 +13383,7 @@ private:
                     if (c == 'r' || c == 'R') { stdWindow(); break; }
                     if (c == 't' || c == 'T') { traceOn = !traceOn; break; }
                     if (c == 'b' || c == 'B') { boxZoom(); break; }
+                    if (c == 'p' || c == 'P') { paramSlider(); break; }
                     if (c == '+' || c == 'n') {
                         for (int k = 1; k <= MAXF; k++) {
                             int q = (traceFn + k) % MAXF;
@@ -9669,6 +13393,12 @@ private:
                     }
                     if (c == 's' || c == 'S') { DM.saveBMPAuto("graph"); break; }
                 }
+                if (modeT == 6) {
+                    if (st.fn && IS_LEFT)  { view3Phi -= 0.15; break; }
+                    if (st.fn && IS_RIGHT) { view3Phi += 0.15; break; }
+                    if (st.fn && IS_UP)    { view3Theta += 0.1; if (view3Theta > 1.5) view3Theta = 1.5; break; }
+                    if (st.fn && IS_DOWN)  { view3Theta -= 0.1; if (view3Theta < -0.2) view3Theta = -0.2; break; }
+                }
                 if (traceOn) {
                     double dx = (xmax - xmin) / 80.0;
                     if (st.fn && IS_LEFT)  { tcur -= dx; break; }
@@ -9677,9 +13407,50 @@ private:
             }
         }
     }
+
+    // パラメータスライダー: 変数 A〜J を fn+←/→ で増減し、グラフを再描画
+    void paramSlider() {
+        int vi = 0;
+        double step = 0.1;
+        auto setv = [&](double v) {
+            char t[32]; snprintf(t, sizeof(t), "%.10g", v);
+            G.vars[vi] = atof(t);
+        };
+        while (true) {
+            drawAll();
+            auto& d = M5Cardputer.Display;
+            char b[56];
+            snprintf(b, sizeof(b), "%c=%g step=%g", 'A' + vi, G.vars[vi], step);
+            d.fillRect(1, HDR_H + 1, 156, 10, C_BG);
+            d.setTextColor(C_OK, C_BG);
+            d.drawString(b, 3, HDR_H + 2);
+            DM.footer("a-j:var ,/:val", ";.:step v:set", "ESC:back");
+            while (true) {
+                if (!DM.pollKeys()) { delay(15); continue; }
+                auto st = M5Cardputer.Keyboard.keysState();
+                if (IS_ESC)   return;
+                if (st.fn && IS_LEFT)  { setv(G.vars[vi] - step); break; }
+                if (st.fn && IS_RIGHT) { setv(G.vars[vi] + step); break; }
+                if (st.fn && IS_UP)    { step *= 10; break; }
+                if (st.fn && IS_DOWN)  { step /= 10; if (step < 1e-6) step = 1e-6; break; }
+                if (!st.word.empty()) {
+                    char c = st.word[0];
+                    if (c >= 'A' && c <= 'J') c += 32;
+                    if (c >= 'a' && c <= 'j') { vi = c - 'a'; break; }
+                    if (c == 'v' || c == 'V') {
+                        char vb[24]; snprintf(vb, sizeof(vb), "%g", G.vars[vi]);
+                        if (DM.inputLine("value:", vb, sizeof(vb))) setv(atof(vb));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     void drawAll() {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG);
+        if (fabs(xmax - xmin) < 1e-12 || fabs(ymax - ymin) < 1e-12) return;
         const char* names[] = {"y=f(x)", "Param", "Polar", "Implicit", "Ineq", "Sequence", "3D"};
         DM.header(names[modeT]);
         int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
@@ -9692,7 +13463,7 @@ private:
             int sy = gy + gh - 1 - (int)((-ymin)/(ymax-ymin)*gh);
             d.drawLine(gx, sy, gx+gw-1, sy, C_GRID);
         }
-        uint16_t cols[MAXF] = {C_ACC, C_OK, C_ACC2, C_ERR};
+        uint16_t* cols = colorFn;
         for (int f = 0; f < MAXF; f++) {
             if (!active[f] || !expr[f][0]) continue;
             switch (modeT) {
@@ -9705,7 +13476,9 @@ private:
                 case 6: plot3D(f, cols[f]); break;
             }
         }
+        if (shapeN > 0) drawShapes();
     }
+
     void plotYofX(int f, uint16_t col) {
         auto& d = M5Cardputer.Display;
         int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
@@ -9719,11 +13492,12 @@ private:
             double y = r.val;
             if (y < ymin || y > ymax) { prevOk = false; continue; }
             int py = gy + gh - 1 - (int)((y - ymin)/(ymax - ymin)*(gh-1));
-            if (prevOk) d.drawLine(prevX, prevY, gx + px, py, col);
+            if (prevOk) drawLineStyled(prevX, prevY, gx + px, py, col, styleFn[f]);
             else d.drawPixel(gx + px, py, col);
             prevX = gx + px; prevY = py; prevOk = true;
         }
     }
+
     void plotParam(int f, uint16_t col) {
         char* sep = strchr(expr[f], ';');
         if (!sep) return;
@@ -9739,15 +13513,16 @@ private:
             st.val = t;
             auto rx = gEv.eval(xe, &st, 1);
             auto ry = gEv.eval(ye, &st, 1);
-            if (!rx.ok || !ry.ok) { prevOk = false; continue; }
+            if (!rx.ok || !ry.ok || isnan(rx.val) || isnan(ry.val) || isinf(rx.val) || isinf(ry.val)) { prevOk = false; continue; }
             double x = rx.val, y = ry.val;
             if (x < xmin || x > xmax || y < ymin || y > ymax) { prevOk = false; continue; }
             int px = gx + (int)((x - xmin)/(xmax - xmin) * gw);
             int py = gy + gh - 1 - (int)((y - ymin)/(ymax - ymin) * gh);
-            if (prevOk) d.drawLine(prevX, prevY, px, py, col);
+            if (prevOk) drawLineStyled(prevX, prevY, px, py, col, styleFn[f]);
             prevX = px; prevY = py; prevOk = true;
         }
     }
+
     void plotPolar(int f, uint16_t col) {
         auto& d = M5Cardputer.Display;
         int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
@@ -9756,77 +13531,84 @@ private:
         for (double t = tmin; t <= tmax; t += tstep) {
             st.val = t;
             auto r = gEv.eval(expr[f], &st, 1);
-            if (!r.ok) { prevOk = false; continue; }
+            if (!r.ok || isnan(r.val) || isinf(r.val)) { prevOk = false; continue; }
             double rad = r.val;
             double x = rad * cos(t), y = rad * sin(t);
             if (x < xmin || x > xmax || y < ymin || y > ymax) { prevOk = false; continue; }
             int px = gx + (int)((x - xmin)/(xmax - xmin) * gw);
             int py = gy + gh - 1 - (int)((y - ymin)/(ymax - ymin) * gh);
-            if (prevOk) d.drawLine(prevX, prevY, px, py, col);
+            if (prevOk) drawLineStyled(prevX, prevY, px, py, col, styleFn[f]);
             prevX = px; prevY = py; prevOk = true;
         }
     }
+
+    // 陰関数 f(x,y)=0 : マーチングスクエア法。セルサイズは implCell ピクセル、
+    // 鞍点セルは双線形中心値で連結を判定する。
     void plotImplicit(int f, uint16_t col) {
         auto& d = M5Cardputer.Display;
         int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
-        const int RES = 40;
+        int cs = implCell; if (cs < 2) cs = 2; if (cs > 8) cs = 8;
+        int RX = gw / cs, RY = gh / cs;
+        if (RX < 4) RX = 4; if (RX > 128) RX = 128;
+        if (RY < 4) RY = 4; if (RY > 128) RY = 128;
         ExprEval::Subst sub[2] = {{'x', 0}, {'y', 0}};
-        double cellX = (xmax - xmin)/RES;
-        double cellY = (ymax - ymin)/RES;
-        double prev[42];
-        for (int j = 0; j <= RES; j++) {
-            double xj = xmin + j * cellX;
-            sub[0].val = xj; sub[1].val = ymin;
+        double cellX = (xmax - xmin) / RX, cellY = (ymax - ymin) / RY;
+        double prev[129], cur[129];
+        auto evalAt = [&](double x, double y) -> double {
+            sub[0].val = x; sub[1].val = y;
             auto r = gEv.eval(expr[f], sub, 2);
-            prev[j] = r.ok ? r.val : NAN;
-        }
-        for (int i = 0; i < RES; i++) {
-            double yL = ymin + (i+1) * cellY;
-            double cur[42];
-            for (int j = 0; j <= RES; j++) {
-                double xj = xmin + j * cellX;
-                sub[0].val = xj; sub[1].val = yL;
-                auto r = gEv.eval(expr[f], sub, 2);
-                cur[j] = r.ok ? r.val : NAN;
-            }
-            for (int j = 0; j < RES; j++) {
-                double v[4] = {prev[j], prev[j+1], cur[j+1], cur[j]};
-                if (isnan(v[0])||isnan(v[1])||isnan(v[2])||isnan(v[3])) continue;
+            return (r.ok && !isnan(r.val) && !isinf(r.val)) ? r.val : NAN;
+        };
+        auto toPx = [&](double x, double y, int& px, int& py) {
+            px = gx + (int)((x - xmin) / (xmax - xmin) * gw);
+            py = gy + gh - 1 - (int)((y - ymin) / (ymax - ymin) * gh);
+        };
+        auto seg = [&](double xa, double ya, double xb, double yb) {
+            int x1, y1, x2, y2;
+            toPx(xa, ya, x1, y1); toPx(xb, yb, x2, y2);
+            d.drawLine(x1, y1, x2, y2, col);
+        };
+        for (int j = 0; j <= RX; j++) prev[j] = evalAt(xmin + j * cellX, ymin);
+        for (int i = 0; i < RY; i++) {
+            double y0 = ymin + i * cellY, y1 = y0 + cellY;
+            for (int j = 0; j <= RX; j++) cur[j] = evalAt(xmin + j * cellX, y1);
+            for (int j = 0; j < RX; j++) {
+                double v[4] = {prev[j], prev[j+1], cur[j+1], cur[j]};   // 左下, 右下, 右上, 左上
+                if (isnan(v[0]) || isnan(v[1]) || isnan(v[2]) || isnan(v[3])) continue;
                 int code = 0;
                 for (int k = 0; k < 4; k++) if (v[k] > 0) code |= (1 << k);
                 if (code == 0 || code == 15) continue;
-                double cx0 = xmin + j*cellX, cy0 = ymin + i*cellY;
-                double cx1 = cx0 + cellX,     cy1 = cy0 + cellY;
-                auto edge = [&](int a, int b, double xa, double ya, double xb, double yb,
-                                double& ex, double& ey) {
-                    double t = v[a] / (v[a] - v[b]);
-                    ex = xa + t * (xb - xa);
-                    ey = ya + t * (yb - ya);
-                };
-                struct P { double x, y; };
-                P pts[4]; int np = 0;
-                if ((code & 1) != ((code >> 1) & 1)) edge(0, 1, cx0, cy0, cx1, cy0, pts[np].x, pts[np].y), np++;
-                if (((code >> 1) & 1) != ((code >> 2) & 1)) edge(1, 2, cx1, cy0, cx1, cy1, pts[np].x, pts[np].y), np++;
-                if (((code >> 2) & 1) != ((code >> 3) & 1)) edge(2, 3, cx1, cy1, cx0, cy1, pts[np].x, pts[np].y), np++;
-                if (((code >> 3) & 1) != (code & 1)) edge(3, 0, cx0, cy1, cx0, cy0, pts[np].x, pts[np].y), np++;
-                if (np >= 2) {
-                    int x1 = gx + (int)((pts[0].x - xmin)/(xmax - xmin) * gw);
-                    int y1 = gy + gh - 1 - (int)((pts[0].y - ymin)/(ymax - ymin) * gh);
-                    int x2 = gx + (int)((pts[1].x - xmin)/(xmax - xmin) * gw);
-                    int y2 = gy + gh - 1 - (int)((pts[1].y - ymin)/(ymax - ymin) * gh);
-                    d.drawLine(x1, y1, x2, y2, col);
+                double x0 = xmin + j * cellX, x1 = x0 + cellX;
+                double ex[4], ey[4]; bool has[4];
+                // 辺0:下, 辺1:右, 辺2:上, 辺3:左
+                static const int ea[4] = {0, 1, 2, 3}, eb[4] = {1, 2, 3, 0};
+                double cxv[4] = {x0, x1, x1, x0}, cyv[4] = {y0, y0, y1, y1};
+                int np = 0;
+                for (int e = 0; e < 4; e++) {
+                    int a = ea[e], b = eb[e];
+                    has[e] = ((v[a] > 0) != (v[b] > 0));
+                    if (has[e]) {
+                        double t = v[a] / (v[a] - v[b]);
+                        ex[e] = cxv[a] + t * (cxv[b] - cxv[a]);
+                        ey[e] = cyv[a] + t * (cyv[b] - cyv[a]);
+                        np++;
+                    }
                 }
-                if (np == 4) {
-                    int x1 = gx + (int)((pts[2].x - xmin)/(xmax - xmin) * gw);
-                    int y1 = gy + gh - 1 - (int)((pts[2].y - ymin)/(ymax - ymin) * gh);
-                    int x2 = gx + (int)((pts[3].x - xmin)/(xmax - xmin) * gw);
-                    int y2 = gy + gh - 1 - (int)((pts[3].y - ymin)/(ymax - ymin) * gh);
-                    d.drawLine(x1, y1, x2, y2, col);
+                if (np == 2) {
+                    int p = -1, q = -1;
+                    for (int e = 0; e < 4; e++) if (has[e]) { if (p < 0) p = e; else q = e; }
+                    seg(ex[p], ey[p], ex[q], ey[q]);
+                } else if (np == 4) {
+                    double center = (v[0] + v[1] + v[2] + v[3]) / 4;
+                    bool c1 = ((center > 0) == (v[1] > 0));
+                    if (c1) { seg(ex[0], ey[0], ex[3], ey[3]); seg(ex[1], ey[1], ex[2], ey[2]); }
+                    else    { seg(ex[0], ey[0], ex[1], ey[1]); seg(ex[2], ey[2], ex[3], ey[3]); }
                 }
             }
-            for (int j = 0; j <= RES; j++) prev[j] = cur[j];
+            for (int j = 0; j <= RX; j++) prev[j] = cur[j];
         }
     }
+
     void plotIneq(int f, uint16_t col) {
         auto& d = M5Cardputer.Display;
         int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
@@ -9842,6 +13624,41 @@ private:
             }
         }
     }
+
+    void plotIneqIntersect() {
+        int activeN = 0;
+        for (int f = 0; f < MAXF; f++) if (active[f] && expr[f][0]) activeN++;
+        if (activeN == 0) { DM.notify("No active fn", C_ERR); return; }
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Ineq Intersection"); DM.footer("S:save","","ESC:back");
+        int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
+        d.drawRect(gx, gy, gw, gh, C_DIM);
+        if (xmin < 0 && xmax > 0) d.drawLine(gx + (int)((-xmin)/(xmax-xmin)*gw), gy, gx + (int)((-xmin)/(xmax-xmin)*gw), gy+gh-1, C_GRID);
+        if (ymin < 0 && ymax > 0) { int sy = gy + gh - 1 - (int)((-ymin)/(ymax-ymin)*gh); d.drawLine(gx, sy, gx+gw-1, sy, C_GRID); }
+        ExprEval::Subst sub[2] = {{'x',0},{'y',0}};
+        for (int py = 0; py < gh; py += 2) {
+            double yv = ymin + (gh - 1 - py) * (ymax - ymin) / gh;
+            sub[1].val = yv;
+            for (int px = 0; px < gw; px += 2) {
+                double xv = xmin + px * (xmax - xmin) / gw;
+                sub[0].val = xv;
+                bool allPos = true;
+                for (int f = 0; f < MAXF; f++) {
+                    if (!active[f] || !expr[f][0]) continue;
+                    auto r = gEv.eval(expr[f], sub, 2);
+                    if (!r.ok || r.val <= 0) { allPos = false; break; }
+                }
+                if (allPos) d.drawPixel(gx + px, gy + py, C_ACC);
+            }
+        }
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("ineqix");
+        }
+    }
+
     void plotSeq(int f, uint16_t col) {
         auto& d = M5Cardputer.Display;
         int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
@@ -9851,7 +13668,7 @@ private:
         for (int i = 0; i < N; i++) {
             sn.val = seqStart + i;
             auto r = gEv.eval(expr[f], &sn, 1);
-            if (!r.ok) continue;
+            if (!r.ok || isnan(r.val) || isinf(r.val)) continue;
             if (r.val < ymin || r.val > ymax) continue;
             int px = gx + (int)((double)i / (N - 1) * (gw - 4)) + 2;
             int py = gy + gh - 1 - (int)((r.val - ymin)/(ymax - ymin) * gh);
@@ -9859,17 +13676,19 @@ private:
             d.fillCircle(px, py, 2, col);
         }
     }
+
     void plot3D(int f, uint16_t col) {
         auto& d = M5Cardputer.Display;
         int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
-        const int N = 16;
+        const int N = grid3N;
         double dx = (xmax - xmin)/N, dy = (ymax - ymin)/N;
         ExprEval::Subst sub[2] = {{'x', 0}, {'y', 0}};
-        double phi = M_PI/6, theta = M_PI/8;
+        double phi = view3Phi, theta = view3Theta;
         double cp = cos(phi), sp = sin(phi);
         double ct = cos(theta), st_ = sin(theta);
         double cx0 = (xmin + xmax)/2, cy0 = (ymin + ymax)/2, cz0 = (zmin + zmax)/2;
-        double scale = (gw < gh ? gw : gh) / (2.5 * (xmax - xmin));
+        double xspan3 = xmax - xmin; if (xspan3 < 1e-9) xspan3 = 1e-9;
+        double scale = (gw < gh ? gw : gh) / (2.5 * xspan3);
         auto project = [&](double x, double y, double z, int& px, int& py){
             double xr = (x - cx0)*cp - (y - cy0)*sp;
             double yr = (x - cx0)*sp + (y - cy0)*cp;
@@ -9883,7 +13702,7 @@ private:
                 double x = xmin + i*dx, y = ymin + j*dy;
                 sub[0].val = x; sub[1].val = y;
                 auto r = gEv.eval(expr[f], sub, 2);
-                if (!r.ok) { ok = false; continue; }
+                if (!r.ok || isnan(r.val) || isinf(r.val)) { ok = false; continue; }
                 double z = r.val;
                 if (z < zmin) z = zmin; if (z > zmax) z = zmax;
                 int px, py; project(x, y, z, px, py);
@@ -9897,7 +13716,7 @@ private:
                 double x = xmin + i*dx, y = ymin + j*dy;
                 sub[0].val = x; sub[1].val = y;
                 auto r = gEv.eval(expr[f], sub, 2);
-                if (!r.ok) { ok = false; continue; }
+                if (!r.ok || isnan(r.val) || isinf(r.val)) { ok = false; continue; }
                 double z = r.val;
                 if (z < zmin) z = zmin; if (z > zmax) z = zmax;
                 int px, py; project(x, y, z, px, py);
@@ -9906,6 +13725,7 @@ private:
             }
         }
     }
+
     void drawTraceMarker(int f, double xv) {
         if (modeT != 0) return;
         if (!active[f]) return;
@@ -9913,9 +13733,10 @@ private:
         int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
         ExprEval::Subst sx = {'x', xv};
         auto r = gEv.eval(expr[f], &sx, 1);
-        if (!r.ok) return;
+        if (!r.ok || isnan(r.val) || isinf(r.val)) return;
         if (xv < xmin || xv > xmax || r.val < ymin || r.val > ymax) return;
         int px = gx + (int)((xv - xmin)/(xmax - xmin) * gw);
+        if (px > gx + gw - 1) px = gx + gw - 1;
         int py = gy + gh - 1 - (int)((r.val - ymin)/(ymax - ymin) * gh);
         d.drawLine(px, gy, px, gy + gh - 1, C_ACC2);
         d.fillCircle(px, py, 3, C_OK);
@@ -9926,25 +13747,31 @@ private:
         d.setTextColor(C_HDRTX, C_HDR);
         d.drawString(l, LCD_W - tw + 3, gy + 1);
     }
+
     void zoomIn() {
         double cx = (xmin+xmax)/2, cy = (ymin+ymax)/2;
         double dx = (xmax-xmin)/4, dy = (ymax-ymin)/4;
         xmin = cx - dx; xmax = cx + dx;
         ymin = cy - dy; ymax = cy + dy;
     }
+
     void zoomOut() {
         double cx = (xmin+xmax)/2, cy = (ymin+ymax)/2;
         double dx = xmax-xmin, dy = ymax-ymin;
         xmin = cx - dx; xmax = cx + dx;
         ymin = cy - dy; ymax = cy + dy;
     }
+
     void boxZoom() {
         char b[16];
         strcpy(b,"-1"); if (!DM.inputLine("zoom xmin:", b, sizeof(b))) return; xmin = atof(b);
         strcpy(b,"1");  if (!DM.inputLine("zoom xmax:", b, sizeof(b))) return; xmax = atof(b);
         strcpy(b,"-1"); if (!DM.inputLine("zoom ymin:", b, sizeof(b))) return; ymin = atof(b);
         strcpy(b,"1");  if (!DM.inputLine("zoom ymax:", b, sizeof(b))) return; ymax = atof(b);
+        if (xmin >= xmax) { double t = xmin; xmin = xmax; xmax = t; }
+        if (ymin >= ymax) { double t = ymin; ymin = ymax; ymax = t; }
     }
+
     void gsolveMenu() {
         const char* items[] = {
             "Root (sign change scan)","Maximum (gradient ascent)","Minimum (gradient descent)",
@@ -9965,6 +13792,7 @@ private:
             case 6: gsolveIntegral(idx); break;
         }
     }
+
     void gsolveRoot(int idx) {
         const int N = 200;
         double dx = (xmax-xmin)/N;
@@ -9992,6 +13820,7 @@ private:
         if (found == 0) { d.setTextColor(C_DIM, C_BG); d.drawString("No sign change.", 4, HDR_H + 8); }
         DM.waitEsc();
     }
+
     void gsolveExtremum(int idx, bool isMax) {
         const int N = 200;
         double dx = (xmax-xmin)/N;
@@ -10028,6 +13857,7 @@ private:
         if (found == 0) { d.setTextColor(C_DIM, C_BG); d.drawString("Not found", 4, HDR_H + 8); }
         DM.waitEsc();
     }
+
     void gsolveIntersect() {
         int a = -1, b = -1;
         for (int i = 0; i < MAXF; i++) if (active[i] && expr[i][0]) {
@@ -10063,6 +13893,7 @@ private:
         if (found == 0) { d.setTextColor(C_DIM, C_BG); d.drawString("No intersect", 4, HDR_H + 8); }
         DM.waitEsc();
     }
+
     void yAtX(int idx) {
         char b[16] = "0";
         if (!DM.inputLine("x:", b, sizeof(b))) return;
@@ -10071,6 +13902,7 @@ private:
         char m[40]; snprintf(m, sizeof(m), "y = %g", r.ok ? r.val : NAN);
         DM.notify(m, C_OK, 1500);
     }
+
     void xAtY(int idx) {
         char b[16] = "0";
         if (!DM.inputLine("y:", b, sizeof(b))) return;
@@ -10097,6 +13929,7 @@ private:
         }
         DM.notify("Not found", C_ERR);
     }
+
     void gsolveIntegral(int idx) {
         char b[16];
         strcpy(b, "0"); if (!DM.inputLine("from a:", b, sizeof(b))) return; double a = atof(b);
@@ -10106,6 +13939,7 @@ private:
         DM.notify(m, C_OK, 2000);
         G.ans = v; G.ansComplex = false;
     }
+
     void tanNormal() {
         int idx = -1;
         for (int i = 0; i < MAXF; i++) if (active[i] && expr[i][0]) { idx = i; break; }
@@ -10132,6 +13966,98 @@ private:
             d.drawString("Norm: X = const", 4, HDR_H+50);
         }
         DM.waitEsc();
+    }
+
+    void drawGradientField() {
+        if (!expr[0][0]) { DM.notify("Set F1 = f(x,y)", C_ERR); return; }
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Gradient Field"); DM.footer("S:save R:range", "", "ESC:back");
+        int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
+        d.drawRect(gx, gy, gw, gh, C_DIM);
+        if (xmin < 0 && xmax > 0) d.drawLine(gx + (int)((-xmin)/(xmax-xmin)*gw), gy, gx + (int)((-xmin)/(xmax-xmin)*gw), gy+gh-1, C_GRID);
+        if (ymin < 0 && ymax > 0) { int sy = gy + gh - 1 - (int)((-ymin)/(ymax-ymin)*gh); d.drawLine(gx, sy, gx+gw-1, sy, C_GRID); }
+        const int NX = 30, NY = 16;
+        ExprEval::Subst sb[2] = {{'x',0},{'y',0}};
+        double dxUnit = (xmax - xmin) / NX * 0.4;
+        for (int ix = 0; ix < NX; ix++) for (int iy = 0; iy < NY; iy++) {
+            double x = xmin + (ix + 0.5) * (xmax - xmin) / NX;
+            double y = ymin + (iy + 0.5) * (ymax - ymin) / NY;
+            sb[0].val = x; sb[1].val = y;
+            auto r = gEv.eval(expr[0], sb, 2);
+            if (!r.ok || isnan(r.val) || isinf(r.val)) continue;
+            double slope = r.val;
+            double dx = dxUnit;
+            double dy = slope * dxUnit;
+            double len = sqrt(dx*dx + dy*dy);
+            if (len < 1e-12) continue;
+            double maxL = dxUnit * 1.2;
+            if (len > maxL) { dx *= maxL/len; dy *= maxL/len; }
+            int px = gx + (int)((x - xmin)/(xmax-xmin) * gw);
+            int py = gy + gh - 1 - (int)((y - ymin)/(ymax-ymin) * gh);
+            int qx = gx + (int)((x + dx - xmin)/(xmax-xmin) * gw);
+            int qy = gy + gh - 1 - (int)((y + dy - ymin)/(ymax-ymin) * gh);
+            d.drawLine(px, py, qx, qy, C_ACC);
+        }
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("grad");
+            if (M5Cardputer.Keyboard.isKeyPressed('r') || M5Cardputer.Keyboard.isKeyPressed('R')) { editRange(); break; }
+        }
+    }
+
+    void drawPhasePlane() {
+        if (!expr[0][0] || !expr[1][0]) { DM.notify("Set F1=dx/dt, F2=dy/dt", C_ERR); return; }
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header("Phase Plane"); DM.footer("S:save R:range", "", "ESC:back");
+        int gx = 0, gy = HDR_H, gw = LCD_W, gh = LCD_H - HDR_H - FTR_H;
+        d.drawRect(gx, gy, gw, gh, C_DIM);
+        if (xmin < 0 && xmax > 0) d.drawLine(gx + (int)((-xmin)/(xmax-xmin)*gw), gy, gx + (int)((-xmin)/(xmax-xmin)*gw), gy+gh-1, C_GRID);
+        if (ymin < 0 && ymax > 0) { int sy = gy + gh - 1 - (int)((-ymin)/(ymax-ymin)*gh); d.drawLine(gx, sy, gx+gw-1, sy, C_GRID); }
+        const int NX = 24, NY = 13;
+        ExprEval::Subst sb[2] = {{'x',0},{'y',0}};
+        double mag[24*13]; double maxMag = 0;
+        for (int ix = 0; ix < NX; ix++) for (int iy = 0; iy < NY; iy++) {
+            double x = xmin + (ix + 0.5) * (xmax - xmin) / NX;
+            double y = ymin + (iy + 0.5) * (ymax - ymin) / NY;
+            sb[0].val = x; sb[1].val = y;
+            auto rx = gEv.eval(expr[0], sb, 2);
+            auto ry = gEv.eval(expr[1], sb, 2);
+            double m = (rx.ok && ry.ok) ? sqrt(rx.val*rx.val + ry.val*ry.val) : 0;
+            mag[ix*NY+iy] = m;
+            if (m > maxMag && isfinite(m)) maxMag = m;
+        }
+        if (maxMag <= 0) maxMag = 1;
+        for (int ix = 0; ix < NX; ix++) for (int iy = 0; iy < NY; iy++) {
+            double x = xmin + (ix + 0.5) * (xmax - xmin) / NX;
+            double y = ymin + (iy + 0.5) * (ymax - ymin) / NY;
+            sb[0].val = x; sb[1].val = y;
+            auto rx = gEv.eval(expr[0], sb, 2);
+            auto ry = gEv.eval(expr[1], sb, 2);
+            if (!rx.ok || !ry.ok || isnan(rx.val) || isnan(ry.val) || isinf(rx.val) || isinf(ry.val)) continue;
+            double vx = rx.val, vy = ry.val;
+            double len = sqrt(vx*vx + vy*vy);
+            if (len < 1e-12) continue;
+            double frac = mag[ix*NY+iy] / maxMag;
+            double arrowLen = (xmax - xmin) / NX * 0.4 * (0.3 + 0.7 * frac);
+            double dx = vx / len * arrowLen;
+            double dy = vy / len * arrowLen;
+            int px = gx + (int)((x - xmin)/(xmax-xmin) * gw);
+            int py = gy + gh - 1 - (int)((y - ymin)/(ymax-ymin) * gh);
+            int qx = gx + (int)((x + dx - xmin)/(xmax-xmin) * gw);
+            int qy = gy + gh - 1 - (int)((y + dy - ymin)/(ymax-ymin) * gh);
+            uint16_t col = (frac > 0.6) ? C_ERR : ((frac > 0.3) ? C_ACC2 : C_ACC);
+            d.drawLine(px, py, qx, qy, col);
+            d.fillCircle(qx, qy, 1, col);
+        }
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("phase");
+            if (M5Cardputer.Keyboard.isKeyPressed('r') || M5Cardputer.Keyboard.isKeyPressed('R')) { editRange(); break; }
+        }
     }
 };
 
@@ -10195,7 +14121,7 @@ public:
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 if (st.fn && IS_UP)    { if (curR > 0) curR--; break; }
                 if (st.fn && IS_DOWN)  { if (curR < SS_ROWS - 1) curR++; break; }
                 if (st.fn && IS_LEFT)  { if (curC > 0) curC--; break; }
@@ -10217,16 +14143,18 @@ public:
     }
 private:
     void transferMenu() {
-        const char* it[] = { "Sheet A..H -> L1..L8", "L1..L8 -> Sheet A..H", "Cancel" };
-        int s = DM.menu("Sheet <-> Lists", it, 3);
-        if (s < 0 || s == 2) return;
+        const char* it[] = { "Sheet A..H -> L1..L8", "L1..L8 -> Sheet A..H", "Sort rows by column", "Filter rows by column to L?", "Cancel" };
+        int s = DM.menu("Sheet <-> Lists", it, 5);
+        if (s < 0 || s == 4) return;
+        if (s == 2) { sortMenu(); return; }
+        if (s == 3) { filterMenu(); return; }
         if (!G.stat[0].data) { if (!G.allocStat()) { DM.notify("alloc fail", C_ERR); return; } }
         if (s == 0) {
             for (int c = 0; c < STAT_LISTS; c++) {
                 G.stat[c].count = 0;
                 for (int r = 0; r < SS_ROWS; r++) {
                     double v = evalCell(r, c);
-                    if (!isnan(v) && G.stat[c].count < G.statCapacity)
+                    if (!isnan(v) && !isinf(v) && G.stat[c].count < G.statCapacity)
                         G.stat[c].data[G.stat[c].count++] = v;
                 }
             }
@@ -10241,6 +14169,142 @@ private:
             DM.notify("Exported to sheet", C_OK);
         }
     }
+
+    // ---- 範囲関数 / IF / セル参照展開 ----
+    static bool ssBoundary(const char* start, const char* p) {
+        return p == start || !(isalnum((unsigned char)p[-1]) || p[-1] == '_' || p[-1] == '.');
+    }
+
+    // 'A1' 形式を消費。パターン一致なら true（範囲外は valid=false）。
+    static bool ssParseRef(const char*& p, int& r, int& c, bool& valid) {
+        if (!isalpha((unsigned char)*p) || !isdigit((unsigned char)p[1])) return false;
+        int cc = toupper((unsigned char)*p) - 'A';
+        const char* q = p + 1;
+        long rr = 0;
+        while (isdigit((unsigned char)*q)) { if (rr < 100000) rr = rr*10 + (*q - '0'); q++; }
+        rr--;
+        p = q;
+        valid = (cc >= 0 && cc < SS_COLS && rr >= 0 && rr < SS_ROWS);
+        r = (int)rr; c = cc;
+        return true;
+    }
+
+    // SUM/AVG/MIN/MAX/COUNT/PROD(範囲|セル|数値, ...) を数値へ展開
+    bool ssTryRangeFn(const char*& p, const char* start, char* out, int& n, int cap, int depth) {
+        if (!ssBoundary(start, p)) return false;
+        char nm[8]; int k = 0; const char* q = p;
+        while (isalpha((unsigned char)*q) && k < 7) nm[k++] = (char)toupper((unsigned char)*q++);
+        nm[k] = 0;
+        if (isalpha((unsigned char)*q) || *q != '(') return false;
+        int fn = -1;
+        if (!strcmp(nm, "SUM")) fn = 0;
+        else if (!strcmp(nm, "AVG") || !strcmp(nm, "AVERAGE") || !strcmp(nm, "MEAN")) fn = 1;
+        else if (!strcmp(nm, "MIN")) fn = 2;
+        else if (!strcmp(nm, "MAX")) fn = 3;
+        else if (!strcmp(nm, "COUNT")) fn = 4;
+        else if (!strcmp(nm, "PROD")) fn = 5;
+        if (fn < 0) return false;
+        q++;
+        double sum = 0, prod = 1, mn = INFINITY, mx = -INFINITY; long cnt = 0;
+        auto add = [&](double v) {
+            if (isnan(v)) return;
+            sum += v; prod *= v; cnt++;
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+        };
+        while (true) {
+            while (*q == ' ') q++;
+            int r0, c0, r1, c1; bool v0, v1;
+            if (ssParseRef(q, r0, c0, v0)) {
+                if (!v0) return false;
+                r1 = r0; c1 = c0;
+                if (*q == ':') {
+                    q++;
+                    if (!ssParseRef(q, r1, c1, v1) || !v1) return false;
+                }
+                if (r0 > r1) { int t = r0; r0 = r1; r1 = t; }
+                if (c0 > c1) { int t = c0; c0 = c1; c1 = t; }
+                for (int rr = r0; rr <= r1; rr++)
+                    for (int cc = c0; cc <= c1; cc++)
+                        if (G.ssData[rr][cc]) add(evalCell(rr, cc, depth + 1));
+            } else {
+                char* e; double v = strtod(q, &e);
+                if (e == q) return false;
+                q = e; add(v);
+            }
+            while (*q == ' ') q++;
+            if (*q == ',') { q++; continue; }
+            if (*q == ')') { q++; break; }
+            return false;
+        }
+        double res;
+        switch (fn) {
+            case 0: res = sum; break;
+            case 1: res = cnt ? sum / cnt : NAN; break;
+            case 2: res = cnt ? mn : NAN; break;
+            case 3: res = cnt ? mx : NAN; break;
+            case 4: res = (double)cnt; break;
+            default: res = cnt ? prod : NAN; break;
+        }
+        n += snprintf(out + n, cap - n, "(%.12g)", res);
+        if (n > cap - 1) n = cap - 1;
+        p = q;
+        return true;
+    }
+
+    // IF(cond, a, b) → ((cond)?(a):(b))
+    bool ssTryIf(const char*& p, const char* start, char* out, int& n, int cap, int depth) {
+        if (!ssBoundary(start, p)) return false;
+        if (toupper((unsigned char)p[0]) != 'I' || toupper((unsigned char)p[1]) != 'F' || p[2] != '(') return false;
+        const char* q = p + 3;
+        const char* seg[3]; int len[3]; int ns = 0, lvl = 1;
+        seg[0] = q;
+        for (; *q; q++) {
+            if (*q == '(') lvl++;
+            else if (*q == ')') {
+                if (--lvl == 0) break;
+            } else if (*q == ',' && lvl == 1) {
+                if (ns >= 2) return false;
+                len[ns] = (int)(q - seg[ns]); ns++; seg[ns] = q + 1;
+            }
+        }
+        if (*q != ')' || ns != 2) return false;
+        len[2] = (int)(q - seg[2]);
+        char part[3][96];
+        for (int i = 0; i < 3; i++) {
+            if (len[i] >= 90) return false;
+            char tmp[96]; memcpy(tmp, seg[i], len[i]); tmp[len[i]] = 0;
+            expandRefs(tmp, part[i], 96, depth);
+        }
+        n += snprintf(out + n, cap - n, "((%s)?(%s):(%s))", part[0], part[1], part[2]);
+        if (n > cap - 1) n = cap - 1;
+        p = q + 1;
+        return true;
+    }
+
+    int expandRefs(const char* src, char* out, int cap, int depth) {
+        const char* p = src;
+        int n = 0;
+        out[0] = 0;
+        while (*p && n < cap - 20) {
+            if (isalpha((unsigned char)*p)) {
+                if (ssTryRangeFn(p, src, out, n, cap, depth)) continue;
+                if (ssTryIf(p, src, out, n, cap, depth)) continue;
+                int r, c; bool valid;
+                if (ssBoundary(src, p) && ssParseRef(p, r, c, valid)) {
+                    if (valid) { n += snprintf(out + n, cap - n, "(%.12g)", evalCell(r, c, depth + 1)); if (n > cap - 1) n = cap - 1; }
+                    continue;
+                }
+                // 通常の識別子(sin, log10, pi, e1 等)は丸ごとコピー
+                while ((isalnum((unsigned char)*p) || *p == '_') && n < cap - 2) out[n++] = *p++;
+            } else {
+                out[n++] = *p++;
+            }
+        }
+        out[n] = 0;
+        return n;
+    }
+
     double evalCell(int row, int col, int depth = 0) {
         if (depth > 20) return NAN;
         if (!G.ssData[row][col]) return NAN;
@@ -10250,27 +14314,82 @@ private:
         if (end != src && *end == 0) return v;
         const char* p = src;
         if (*p == '=') p++;
-        char expanded[256] = "";
-        int outP = 0;
-        while (*p && outP < 250) {
-            if (isalpha((unsigned char)*p) && isdigit((unsigned char)*(p+1))) {
-                int c = (*p >= 'a') ? (*p - 'a') : (*p - 'A');
-                p++;
-                int r = 0;
-                while (isdigit((unsigned char)*p)) { r = r*10 + (*p - '0'); p++; }
-                r--;
-                if (c >= 0 && c < SS_COLS && r >= 0 && r < SS_ROWS) {
-                    double cellV = evalCell(r, c, depth+1);
-                    outP += snprintf(expanded + outP, 250 - outP, "(%g)", cellV);
-                }
-            } else {
-                expanded[outP++] = *p++;
-            }
-        }
-        expanded[outP] = 0;
+        char expanded[256];
+        expandRefs(p, expanded, sizeof(expanded), depth);
         auto r = gEv.eval(expanded);
         return r.ok ? r.val : NAN;
     }
+
+    int pickCol(const char* prompt) {
+        char b[4] = "A";
+        if (!DM.inputLine(prompt, b, sizeof(b))) return -1;
+        char c = toupper((unsigned char)b[0]);
+        if (c < 'A' || c > 'Z') return -1;
+        int col = c - 'A';
+        if (col >= SS_COLS) return -1;
+        return col;
+    }
+
+    void sortMenu() {
+        int col = pickCol("Sort by col (A-Z):");
+        if (col < 0) return;
+        const char* d[] = {"Ascending", "Descending"};
+        int ord = DM.menu("Order", d, 2);
+        if (ord < 0) return;
+        bool asc = (ord == 0);
+        int rows[SS_ROWS], n = 0;
+        for (int r = 0; r < SS_ROWS; r++) {
+            bool any = false;
+            for (int c = 0; c < SS_COLS; c++) if (G.ssData[r][c]) { any = true; break; }
+            if (any) rows[n++] = r;
+        }
+        for (int i = 0; i < n-1; i++) for (int j = 0; j < n-i-1; j++) {
+            double a = evalCell(rows[j], col);
+            double b = evalCell(rows[j+1], col);
+            bool aN = isnan(a), bN = isnan(b);
+            bool sw = false;
+            if (aN && !bN) sw = true;
+            else if (!aN && !bN) sw = asc ? (a > b) : (a < b);
+            if (sw) {
+                int r1 = rows[j], r2 = rows[j+1];
+                for (int c = 0; c < SS_COLS; c++) { char* tm = G.ssData[r1][c]; G.ssData[r1][c] = G.ssData[r2][c]; G.ssData[r2][c] = tm; }
+                rows[j] = r2; rows[j+1] = r1;
+            }
+        }
+        char m[32]; snprintf(m, sizeof(m), "Sorted %d rows by %c", n, 'A'+col);
+        DM.notify(m, C_OK, 1200);
+    }
+
+    void filterMenu() {
+        int col = pickCol("Filter col (A-Z):");
+        if (col < 0) return;
+        const char* op[] = {"= v", "< v", "> v", "!= v"};
+        int oi = DM.menu("Op", op, 4);
+        if (oi < 0) return;
+        char b[16] = "0";
+        if (!DM.inputLine("value:", b, sizeof(b))) return;
+        double v = atof(b);
+        const char* L[8]; char lb[8][20];
+        for (int i = 0; i < 8; i++) { snprintf(lb[i],20,"L%d (n=%d)",i+1,G.stat[i].count); L[i]=lb[i]; }
+        int dst = DM.menu("Dest list", L, 8);
+        if (dst < 0) return;
+        if (!G.stat[dst].data) { DM.notify("alloc first", C_ERR); return; }
+        G.stat[dst].count = 0;
+        int matched = 0;
+        for (int r = 0; r < SS_ROWS && G.stat[dst].count < G.statCapacity; r++) {
+            double x = evalCell(r, col);
+            if (isnan(x) || isinf(x)) continue;
+            bool ok = false;
+            if (oi == 0) ok = (fabs(x-v) < 1e-9);
+            else if (oi == 1) ok = (x < v);
+            else if (oi == 2) ok = (x > v);
+            else ok = (fabs(x-v) >= 1e-9);
+            if (ok) { G.stat[dst].data[G.stat[dst].count++] = x; matched++; }
+        }
+        char m[40]; snprintf(m, sizeof(m), "Filtered %d vals to L%d", matched, dst+1);
+        DM.notify(m, C_OK, 1500);
+    }
+
     void saveCSV() {
         if (!G.sdOK) { DM.notify("No SD", C_ERR); return; }
         char path[48] = "/sheet.csv";
@@ -10288,6 +14407,7 @@ private:
         f.close();
         DM.notify("Saved", C_OK);
     }
+
     void loadCSV() {
         if (!G.sdOK) { DM.notify("No SD", C_ERR); return; }
         char path[48] = "/sheet.csv";
@@ -10319,7 +14439,6 @@ private:
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 20 / 20 ─ setup() / loop() / メインメニュー / NVS / Wi-Fi       ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
-
 CalculatorCore   gCalc;
 SciRef           gSciRef;
 StatCore         gStatCore;
@@ -10335,7 +14454,980 @@ StatGraphs       gStatGraphs;
 GraphEngine      gGraph;
 ULispMode        gULisp;
 Spreadsheet      gSheet;
+// ── Medical Calculator ─ 医学・疫学系の集約メニュー ─
+class MedicalPK {
+public:
+    void run() {
+        const char* items[] = {
+            "Half-life (from k)",
+            "Half-life (Vd, CL)",
+            "Loading dose",
+            "Maintenance dose",
+            "Dose by weight",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Pharmacokinetics", items, 6);
+        if (s < 0 || s == 5) return;
+        switch (s) {
+            case 0: halfLifeK();  break;
+            case 1: halfLifeCL(); break;
+            case 2: loadingDose();break;
+            case 3: maintDose();  break;
+            case 4: doseWt();     break;
+        }
+        }
+    }
+private:
+    double ask(const char* p, const char* d) {
+        char b[24]; strncpy(b, d, 24); b[23] = 0;
+        if (!DM.inputLine(p, b, sizeof(b))) return NAN;
+        return atof(b);
+    }
 
+    void show(const char* t, const char* l1, double v1, const char* n) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans S:BMP","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[64]; char vs[24];
+        formatNum(v1, vs, sizeof(vs));
+        snprintf(l, sizeof(l), "%s = %s", l1, vs); d.drawString(l, 4, HDR_H + 8);
+        if (n && *n) { d.setTextColor(C_ACC2, C_BG); DM.drawWrapped(n, 4, HDR_H + 28, LCD_W - 8, C_ACC2); }
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans", C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("pk");
+        }
+    }
+
+    void halfLifeK() {
+        double k = ask("Elim k (1/h):", "0.1"); if (isnan(k) || k <= 0) return;
+        double v = 0.693 / k;
+        show("Half-life (k)", "t1/2", v, "t1/2 = ln2 / k");
+    }
+
+    void halfLifeCL() {
+        double vd = ask("Vd (L):", "50"); if (isnan(vd) || vd <= 0) return;
+        double cl = ask("CL (L/h):", "5"); if (isnan(cl) || cl <= 0) return;
+        double v = 0.693 * vd / cl;
+        show("Half-life (CL)", "t1/2", v, "t1/2 = 0.693*Vd/CL");
+    }
+
+    void loadingDose() {
+        double vd = ask("Vd (L):", "50"); if (isnan(vd)) return;
+        double ctarget = ask("Target C (mg/L):", "10"); if (isnan(ctarget) || ctarget <= 0) return;
+        double F = ask("Bioavail F (0-1):", "1"); if (isnan(F) || F <= 0) return;
+        double v = vd * ctarget / F;
+        show("Loading Dose", "LD", v, "LD = Vd * Ctarget / F");
+    }
+
+    void maintDose() {
+        double cl = ask("CL (L/h):", "5"); if (isnan(cl) || cl <= 0) return;
+        double ctarget = ask("Target Css (mg/L):", "10"); if (isnan(ctarget) || ctarget <= 0) return;
+        double F = ask("Bioavail F (0-1):", "1"); if (isnan(F) || F <= 0) return;
+        double v = cl * ctarget / F;
+        show("Maintenance Dose", "MD (/h)", v, "MD = CL*Css/F, per hour. x interval(h) = dose per interval");
+    }
+
+    void doseWt() {
+        double mgkg = ask("Dose (mg/kg):", "10"); if (isnan(mgkg) || mgkg <= 0) return;
+        double wt = ask("Weight (kg):", "70"); if (isnan(wt) || wt <= 0) return;
+        double v = mgkg * wt;
+        show("Dose by weight", "Dose", v, "Dose = mg/kg * Wt");
+    }
+};
+
+MedicalPK gMedPK;
+class MedicalOB {
+public:
+    void run() {
+        const char* items[] = {
+            "Naegele (EDD)",
+            "Gestational age (from LMP)",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Obstetrics", items, 3);
+        if (s < 0 || s == 2) return;
+        cx_ = false;
+        switch (s) { case 0: naegele(); break; case 1: ga(); break; }
+        }
+    }
+private:
+    static bool isLeap(int y) { return (y%4==0 && y%100!=0) || (y%400==0); }
+    static int daysInMonth(int y, int m) {
+        static const int d[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+        if (m==2 && isLeap(y)) return 29;
+        return d[m-1];
+    }
+
+    static long toJD(int y, int m, int d) {
+        if (m <= 2) { y--; m += 12; }
+        int A = y / 100;
+        int B = 2 - A + A/4;
+        return (long)(365.25*(y+4716)) + (int)(30.6001*(m+1)) + d + B - 1524;
+    }
+
+    static void fromJD(long jd, int& y, int& m, int& d) {
+        long a = jd + 32044;
+        long b = (4*a + 3) / 146097;
+        long c = a - (146097*b)/4;
+        long dd = (4*c + 3) / 1461;
+        long e = c - (1461*dd)/4;
+        long mm = (5*e + 2) / 153;
+        d = e - (153*mm + 2)/5 + 1;
+        m = mm + 3 - 12*(mm/10);
+        y = 100*b + dd - 4800 + mm/10;
+    }
+
+    int askInt(const char* p, int defVal) {
+        char b[8]; snprintf(b, sizeof(b), "%d", defVal);
+        if (cx_) return defVal;
+        if (!DM.inputLine(p, b, sizeof(b))) { cx_ = true; return defVal; }
+        return atoi(b);
+    }
+    bool cx_ = false;
+
+    void showDate(const char* t, int y, int m, int d) {
+        auto& disp = M5Cardputer.Display;
+        disp.fillScreen(C_BG); DM.header(t); DM.footer("","","ESC:back");
+        disp.setTextColor(C_OK, C_BG); disp.setTextSize(2);
+        char l[32]; snprintf(l, sizeof(l), "%04d-%02d-%02d", y, m, d);
+        disp.drawString(l, 4, HDR_H + 12); disp.setTextSize(1);
+        disp.setTextColor(C_ACC2, C_BG);
+        disp.drawString("EDD = LMP + 280 days", 4, HDR_H + 44);
+        DM.waitEsc();
+    }
+
+    void naegele() {
+        int ly = askInt("LMP year:", 2024);
+        int lm = askInt("LMP month:", 1);
+        int ld = askInt("LMP day:", 1);
+        if (lm < 1 || lm > 12 || ld < 1 || ld > daysInMonth(ly, lm)) { DM.notify("Bad date", C_ERR); return; }
+        if (cx_) return;
+        long jd = toJD(ly, lm, ld) + 280;
+        int ey, em, ed;
+        fromJD(jd, ey, em, ed);
+        showDate("EDD (Naegele)", ey, em, ed);
+    }
+
+    void ga() {
+        int ly = askInt("LMP year:", 2024);
+        int lm = askInt("LMP month:", 1);
+        int ld = askInt("LMP day:", 1);
+        if (lm < 1 || lm > 12 || ld < 1 || ld > daysInMonth(ly, lm)) { DM.notify("Bad date", C_ERR); return; }
+        int cy = askInt("Today year:", 2024);
+        int cm = askInt("Today month:", 6);
+        int cd = askInt("Today day:", 1);
+        if (cx_) return;
+        long days = toJD(cy, cm, cd) - toJD(ly, lm, ld);
+        if (days < 0) { DM.notify("Negative days", C_ERR); return; }
+        int weeks = days / 7;
+        int dd2 = days % 7;
+        char m[40]; snprintf(m, sizeof(m), "GA = %dw %dd (%ld d)", weeks, dd2, days);
+        DM.notify(m, C_OK, 2000);
+        G.ans = (double)days;
+    }
+};
+
+MedicalOB gMedOB;
+class MedicalEndo {
+public:
+    void run() {
+        const char* items[] = {
+            "HOMA-IR (insulin resistance)",
+            "Free T4 index",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Endocrine", items, 3);
+        if (s < 0 || s == 2) return;
+        switch (s) { case 0: homaIr(); break; case 1: ft4(); break; }
+        }
+    }
+private:
+    double ask(const char* p, const char* d) {
+        char b[24]; strncpy(b, d, 24); b[23] = 0;
+        if (!DM.inputLine(p, b, sizeof(b))) return NAN;
+        return atof(b);
+    }
+
+    void show(const char* t, const char* l1, double v1, const char* n) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans S:BMP","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[64]; char vs[24];
+        formatNum(v1, vs, sizeof(vs));
+        snprintf(l, sizeof(l), "%s = %s", l1, vs); d.drawString(l, 4, HDR_H + 8);
+        if (n && *n) { d.setTextColor(C_ACC2, C_BG); DM.drawWrapped(n, 4, HDR_H + 28, LCD_W - 8, C_ACC2); }
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans", C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("endo");
+        }
+    }
+
+    void homaIr() {
+        double glu = ask("Fasting glu (mg/dL):", "90"); if (isnan(glu) || glu <= 0) return;
+        double ins = ask("Fasting insulin (uU/mL):", "10"); if (isnan(ins) || ins <= 0) return;
+        double v = (glu * ins) / 405.0;
+        const char* n = (v < 2.0) ? "Normal (<2.0)"
+                      : (v < 2.9) ? "Borderline (2.0-2.8)"
+                      : "Insulin resistant (>=2.9)";
+        show("HOMA-IR", "HOMA-IR", v, n);
+    }
+
+    void ft4() {
+        double t4 = ask("Total T4 (ug/dL):", "8"); if (isnan(t4) || t4 <= 0) return;
+        double t3u = ask("T3 uptake (%):", "30"); if (isnan(t3u) || t3u <= 0) return;
+        double v = t4 * (t3u / 30.0);
+        const char* n = (v < 4.5) ? "Low (<4.5)"
+                      : (v < 12)  ? "Normal (4.5-12)"
+                      : "High (>12)";
+        show("Free T4 Index", "FTI", v, n);
+    }
+};
+
+MedicalEndo gMedEndo;
+class MedicalLytes {
+public:
+    void run() {
+        const char* items[] = {
+            "Corrected Ca (Payne)",
+            "Corrected Na (Katz)",
+            "Anion gap",
+            "Serum osmolality",
+            "Winter's formula (pCO2 exp)",
+            "Delta gap / Delta ratio",
+            "Free water deficit",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Lytes / Acid-Base", items, 8);
+        if (s < 0 || s == 7) return;
+        switch (s) {
+            case 0: corrCa();    break;
+            case 1: corrNa();    break;
+            case 2: anionGap();  break;
+            case 3: osmol();     break;
+            case 4: winters();   break;
+            case 5: deltaGap();  break;
+            case 6: fwd();       break;
+        }
+        }
+    }
+private:
+    double ask(const char* p, const char* d) {
+        char b[24]; strncpy(b, d, 24); b[23] = 0;
+        if (!DM.inputLine(p, b, sizeof(b))) return NAN;
+        return atof(b);
+    }
+
+    void show(const char* t, const char* l1, double v1, const char* n) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans S:BMP","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[64]; char vs[24];
+        formatNum(v1, vs, sizeof(vs));
+        snprintf(l, sizeof(l), "%s = %s", l1, vs); d.drawString(l, 4, HDR_H + 8);
+        if (n && *n) { d.setTextColor(C_ACC2, C_BG); DM.drawWrapped(n, 4, HDR_H + 28, LCD_W - 8, C_ACC2); }
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans", C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("lytes");
+        }
+    }
+
+    void corrCa() {
+        double ca = ask("Ca (mg/dL):", "9.0"); if (isnan(ca) || ca <= 0) return;
+        double alb = ask("Albumin (g/dL):", "4.0"); if (isnan(alb) || alb < 0) return;
+        double v = ca + 0.8 * (4.0 - alb);
+        show("Corrected Ca (Payne)", "Ca_corr", v, "Ca + 0.8*(4.0-Alb)");
+    }
+
+    void corrNa() {
+        double na = ask("Na (mEq/L):", "140"); if (isnan(na) || na <= 0) return;
+        double glu = ask("Glucose (mg/dL):", "100"); if (isnan(glu) || glu < 0) return;
+        double v = na + 1.6 * (glu - 100) / 100.0;
+        show("Corrected Na (Katz)", "Na_corr", v, "Na + 1.6*(Glu-100)/100");
+    }
+
+    void anionGap() {
+        double na = ask("Na (mEq/L):", "140"); if (isnan(na) || na <= 0) return;
+        double cl = ask("Cl (mEq/L):", "104"); if (isnan(cl) || cl <= 0) return;
+        double hco3 = ask("HCO3 (mEq/L):", "24"); if (isnan(hco3) || hco3 <= 0) return;
+        double v = na - (cl + hco3);
+        const char* n = (v > 12) ? "High AG (>12) - MUDPILES"
+                      : (v < 8)  ? "Low AG (<8)"
+                      : "Normal (8-12)";
+        show("Anion Gap", "AG", v, n);
+    }
+
+    void osmol() {
+        double na = ask("Na (mEq/L):", "140"); if (isnan(na) || na <= 0) return;
+        double glu = ask("Glucose (mg/dL):", "100"); if (isnan(glu) || glu < 0) return;
+        double bun = ask("BUN (mg/dL):", "14"); if (isnan(bun) || bun < 0) return;
+        double v = 2*na + glu/18.0 + bun/2.8;
+        show("Serum Osmolality", "Osm", v, "2Na + Glu/18 + BUN/2.8");
+    }
+
+    void winters() {
+        double hco3 = ask("HCO3 (mEq/L):", "24"); if (isnan(hco3) || hco3 <= 0) return;
+        double pco2 = ask("Measured pCO2:", "40"); if (isnan(pco2) || pco2 <= 0) return;
+        double exp_lo = 1.5 * hco3 + 6;
+        double exp_hi = 1.5 * hco3 + 10;
+        const char* jd_ = (pco2 < exp_lo) ? "Meas<exp: +resp alk" : (pco2 > exp_hi) ? "Meas>exp: +resp acid" : "Appropriate";
+        char nb[96]; snprintf(nb, sizeof(nb), "Exp pCO2 %.1f-%.1f. %s", exp_lo, exp_hi, jd_);
+        double exp_ = 1.5*hco3 + 8;
+        show("Winter's formula", "pCO2_exp", exp_, nb);
+    }
+
+    void deltaGap() {
+        double na = ask("Na (mEq/L):", "140"); if (isnan(na) || na <= 0) return;
+        double cl = ask("Cl (mEq/L):", "104"); if (isnan(cl) || cl <= 0) return;
+        double hco3 = ask("HCO3 (mEq/L):", "24"); if (isnan(hco3) || hco3 <= 0) return;
+        double ag = na - (cl + hco3);
+        double dAG = ag - 12.0;
+        double dHCO3 = 24.0 - hco3;
+        double ratio = (fabs(dHCO3) > 1e-6) ? dAG / dHCO3 : 0;
+        const char* n = (ratio < 0.4) ? "Pure NAGMA"
+                      : (ratio <= 1.0) ? "Mixed / NAGMA"
+                      : (ratio <= 2.0) ? "Pure HAGMA"
+                      : "Mixed HAGMA + metabolic alk";
+        char nb[80]; snprintf(nb, sizeof(nb), "dAG=%.1f dHCO3=%.1f - %s", dAG, dHCO3, n);
+        show("Delta ratio", "dAG/dHCO3", ratio, nb);
+    }
+
+    void fwd() {
+        double wt = ask("Weight (kg):", "70"); if (isnan(wt) || wt <= 0) return;
+        double na = ask("Na (mEq/L):", "160"); if (isnan(na) || na <= 0) return;
+        double v = 0.6 * wt * (na / 140.0 - 1.0);
+        const char* n = (v > 0) ? "Free water deficit (L)" : "Na <140: excess";
+        show("Free Water Deficit", "FWD", v, n);
+    }
+};
+
+MedicalLytes gMedLytes;
+class MedicalRenal {
+public:
+    void run() {
+        const char* items[] = {
+            "eGFR CKD-EPI 2021",
+            "Cockcroft-Gault CrCl",
+            "Schwartz (pediatric)",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Renal Function", items, 4);
+        if (s < 0 || s == 3) return;
+        switch (s) { case 0: ckdEpi(); break; case 1: cockcroft(); break; case 2: schwartz(); break; }
+        }
+    }
+private:
+    double ask(const char* p, const char* d) {
+        char b[24]; strncpy(b, d, 24); b[23] = 0;
+        if (!DM.inputLine(p, b, sizeof(b))) return NAN;
+        return atof(b);
+    }
+
+    void show(const char* t, const char* l1, double v1, const char* n) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans S:BMP","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[64]; char vs[24];
+        formatNum(v1, vs, sizeof(vs));
+        snprintf(l, sizeof(l), "%s = %s", l1, vs); d.drawString(l, 4, HDR_H + 8);
+        if (n && *n) { d.setTextColor(C_ACC2, C_BG); DM.drawWrapped(n, 4, HDR_H + 28, LCD_W - 8, C_ACC2); }
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans", C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("renal");
+        }
+    }
+
+    const char* gStage(double egfr) {
+        if (egfr >= 90) return "G1 (>=90) normal";
+        if (egfr >= 60) return "G2 (60-89) mild";
+        if (egfr >= 45) return "G3a (45-59)";
+        if (egfr >= 30) return "G3b (30-44)";
+        if (egfr >= 15) return "G4 (15-29) severe";
+        return "G5 (<15) failure";
+    }
+
+    void ckdEpi() {
+        double scr = ask("SCr (mg/dL):", "1.0"); if (isnan(scr) || scr <= 0) return;
+        double age = ask("Age (years):", "50"); if (isnan(age) || age <= 0) return;
+        int female = (int)ask("Female? (0/1):", "0");
+        double k = female ? 0.7 : 0.9;
+        double a = female ? -0.241 : -0.302;
+        double ratio = scr / k;
+        double egfr = 142.0 * pow(fmin(ratio,1.0), a) * pow(fmax(ratio,1.0), -1.200) * pow(0.9938, age);
+        if (female) egfr *= 1.012;
+        show("eGFR CKD-EPI 2021", "eGFR", egfr, gStage(egfr));
+    }
+
+    void cockcroft() {
+        double age = ask("Age (years):", "50"); if (isnan(age) || age <= 0) return;
+        double wt = ask("Weight (kg):", "70"); if (isnan(wt) || wt <= 0) return;
+        double scr = ask("SCr (mg/dL):", "1.0"); if (isnan(scr) || scr <= 0) return;
+        int female = (int)ask("Female? (0/1):", "0");
+        double crcl = ((140 - age) * wt) / (72.0 * scr);
+        if (female) crcl *= 0.85;
+        show("Cockcroft-Gault CrCl", "CrCl", crcl, gStage(crcl));
+    }
+
+    void schwartz() {
+        double ht = ask("Height (cm):", "120"); if (isnan(ht)) return;
+        double scr = ask("SCr (mg/dL):", "0.6"); if (isnan(scr) || scr <= 0) return;
+        double egfr = 0.413 * ht / scr;
+        show("Schwartz (peds)", "eGFR", egfr, gStage(egfr));
+    }
+};
+
+MedicalRenal gMedRenal;
+class MedicalBody {
+public:
+    void run() {
+        const char* items[] = {
+            "BMI (body mass index)",
+            "BSA Mosteller",
+            "BSA DuBois",
+            "IBW (Devine, male/female)",
+            "ABW (adjusted body weight)",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Body Composition", items, 6);
+        if (s < 0 || s == 5) return;
+        switch (s) {
+            case 0: bmi();       break;
+            case 1: bsaMost();   break;
+            case 2: bsaDub();    break;
+            case 3: ibw();       break;
+            case 4: abw();       break;
+        }
+        }
+    }
+private:
+    double ask(const char* p, const char* d) {
+        char b[24]; strncpy(b, d, 24); b[23] = 0;
+        if (!DM.inputLine(p, b, sizeof(b))) return NAN;
+        return atof(b);
+    }
+
+    void show(const char* t, const char* l1, double v1, const char* n) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans S:BMP","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[64]; char vs[24];
+        formatNum(v1, vs, sizeof(vs));
+        snprintf(l, sizeof(l), "%s = %s", l1, vs); d.drawString(l, 4, HDR_H + 8);
+        if (n && *n) { d.setTextColor(C_ACC2, C_BG); DM.drawWrapped(n, 4, HDR_H + 28, LCD_W - 8, C_ACC2); }
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans", C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("body");
+        }
+    }
+
+    void bmi() {
+        double wt = ask("Weight (kg):", "70"); if (isnan(wt) || wt <= 0) return;
+        double ht = ask("Height (cm):", "170"); if (isnan(ht) || ht <= 0) return;
+        double m = ht / 100.0;
+        double v = wt / (m*m);
+        const char* n = (v < 18.5) ? "Underweight (<18.5)"
+                      : (v < 25)   ? "Normal (18.5-24.9)"
+                      : (v < 30)   ? "Overweight (25-29.9)"
+                      : (v < 35)   ? "Obese I (30-34.9)"
+                      : (v < 40)   ? "Obese II (35-39.9)"
+                      : "Obese III (>=40)";
+        show("BMI", "BMI", v, n);
+    }
+
+    void bsaMost() {
+        double wt = ask("Weight (kg):", "70"); if (isnan(wt) || wt <= 0) return;
+        double ht = ask("Height (cm):", "170"); if (isnan(ht) || ht <= 0) return;
+        double v = sqrt(ht * wt / 3600.0);
+        show("BSA Mosteller", "BSA", v, "m^2");
+    }
+
+    void bsaDub() {
+        double wt = ask("Weight (kg):", "70"); if (isnan(wt) || wt <= 0) return;
+        double ht = ask("Height (cm):", "170"); if (isnan(ht) || ht <= 0) return;
+        double v = 0.007184 * pow(wt, 0.425) * pow(ht, 0.725);
+        show("BSA DuBois", "BSA", v, "m^2");
+    }
+
+    void ibw() {
+        double ht = ask("Height (cm):", "170"); if (isnan(ht) || ht <= 0) return;
+        double inches = ht / 2.54;
+        double male = 50.0 + 2.3 * (inches - 60);
+        double female = 45.5 + 2.3 * (inches - 60);
+        if (male < 0) male = 0;
+        if (female < 0) female = 0;
+        char nb[64]; snprintf(nb, sizeof(nb), "Male %.1f kg / Female %.1f kg", male, female);
+        double fq = ask("Female? (0/1):", "0"); if (isnan(fq) || (fq != 0 && fq != 1)) return;
+        show("IBW Devine", fq != 0 ? "Female" : "Male", fq != 0 ? female : male, nb);
+    }
+
+    void abw() {
+        double wt = ask("Actual Wt (kg):", "80"); if (isnan(wt) || wt <= 0) return;
+        double ht = ask("Height (cm):", "170"); if (isnan(ht) || ht <= 0) return;
+        double inches = ht / 2.54;
+        double fq = ask("Female? (0/1):", "0"); if (isnan(fq) || (fq != 0 && fq != 1)) return;
+        double ibw = (fq != 0 ? 45.5 : 50.0) + 2.3 * (inches - 60);
+        if (ibw < 0) ibw = 0;
+        double v = ibw + 0.4 * (wt - ibw);
+        show("Adjusted BW", "ABW", v, "IBW + 0.4(ABW-IBW)");
+    }
+};
+
+MedicalBody gMedBody;
+class MedicalScores {
+public:
+    void run() {
+        const char* items[] = {
+            "GCS (Glasgow Coma Scale)",
+            "CURB-65 (pneumonia)",
+            "qSOFA (sepsis)",
+            "Child-Pugh (cirrhosis)",
+            "MELD score",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Clinical Scores", items, 6);
+        if (s < 0 || s == 5) return;
+        cx_ = false;
+        switch (s) {
+            case 0: gcs();      break;
+            case 1: curb65();   break;
+            case 2: qsofa();    break;
+            case 3: childPugh();break;
+            case 4: meld();     break;
+        }
+        }
+    }
+private:
+    bool cx_ = false;
+    void show(const char* t, const char* l1, double v1, const char* interp) {
+        if (cx_) { cx_ = false; return; }
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans S:BMP","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[64]; char vs[24];
+        formatNum(v1, vs, sizeof(vs));
+        snprintf(l, sizeof(l), "%s = %s", l1, vs); d.drawString(l, 4, HDR_H + 8);
+        if (interp && *interp) {
+            d.setTextColor(C_ACC2, C_BG);
+            DM.drawWrapped(interp, 4, HDR_H + 28, LCD_W - 8, C_ACC2);
+        }
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) {
+                DM.notify("-> Ans", C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S'))
+                DM.saveBMPAuto("score");
+        }
+    }
+
+    int askInt(const char* p, int defVal) {
+        char b[8]; snprintf(b, sizeof(b), "%d", defVal);
+        if (cx_) return defVal;
+        if (!DM.inputLine(p, b, sizeof(b))) { cx_ = true; return defVal; }
+        return atoi(b);
+    }
+
+    void gcs() {
+        int eye = askInt("Eye (1-4):", 4);
+        int verbal = askInt("Verbal (1-5):", 5);
+        int motor = askInt("Motor (1-6):", 6);
+        if (eye < 1 || eye > 4 || verbal < 1 || verbal > 5 || motor < 1 || motor > 6) { DM.notify("E1-4 V1-5 M1-6", C_ERR); return; }
+        int total = eye + verbal + motor;
+        const char* n = (total <= 8) ? "Severe (<=8) intubate"
+                      : (total <= 12) ? "Moderate (9-12)"
+                      : "Mild (13-15)";
+        char ib[80]; snprintf(ib, sizeof(ib), "E%d V%d M%d - %s", eye, verbal, motor, n);
+        show("GCS", "Total", total, ib);
+    }
+
+    void curb65() {
+        int conf = askInt("Confusion (0/1):", 0);
+        int urea = askInt("Urea>7 (0/1):", 0);
+        int rr = askInt("RR>=30 (0/1):", 0);
+        int bp = askInt("SBP<90|DBP<=60 (0/1):", 0);
+        int age = askInt("Age>=65 (0/1):", 0);
+        if (conf<0||conf>1||urea<0||urea>1||rr<0||rr>1||bp<0||bp>1||age<0||age>1) { DM.notify("0/1 only", C_ERR); return; }
+        int t = conf + urea + rr + bp + age;
+        const char* n = (t <= 1) ? "Low risk (outpatient)"
+                      : (t == 2) ? "Moderate (short admission)"
+                      : "High risk (>2) admit";
+        show("CURB-65", "Score", t, n);
+    }
+
+    void qsofa() {
+        int rr = askInt("RR>=22 (0/1):", 0);
+        int sbp = askInt("SBP<=100 (0/1):", 0);
+        int gcs = askInt("GCS<15 (0/1):", 0);
+        if (rr<0||rr>1||sbp<0||sbp>1||gcs<0||gcs>1) { DM.notify("0/1 only", C_ERR); return; }
+        int t = rr + sbp + gcs;
+        const char* n = (t >= 2) ? "High sepsis risk (>=2)" : "Low risk (<2)";
+        show("qSOFA", "Score", t, n);
+    }
+
+    void childPugh() {
+        int enc = askInt("Encephalopathy (1-3):", 1);
+        int asc = askInt("Ascites (1-3):", 1);
+        int bili = askInt("Bilirubin (1-3):", 1);
+        int alb = askInt("Albumin (1-3):", 1);
+        int inr = askInt("INR (1-3):", 1);
+        if (enc<1||enc>3||asc<1||asc>3||bili<1||bili>3||alb<1||alb>3||inr<1||inr>3) { DM.notify("1-3 each", C_ERR); return; }
+        int t = enc + asc + bili + alb + inr;
+        const char* cls = (t <= 6) ? "Class A (5-6)" : (t <= 9) ? "Class B (7-9)" : "Class C (10-15)";
+        show("Child-Pugh", "Score", t, cls);
+    }
+
+    void meld() {
+        char b[16];
+        strcpy(b, "1.0"); if (!DM.inputLine("Bilirubin mg/dL:", b, sizeof(b))) return;
+        double bili = atof(b); if (bili < 1.0) bili = 1.0;
+        strcpy(b, "1.0"); if (!DM.inputLine("INR:", b, sizeof(b))) return;
+        double inr = atof(b); if (inr < 1.0) inr = 1.0;
+        strcpy(b, "1.0"); if (!DM.inputLine("Creatinine mg/dL:", b, sizeof(b))) return;
+        double cr = atof(b);
+        if (cr < 1.0) cr = 1.0;
+        if (cr > 4.0) cr = 4.0;
+        double score = 3.78*log(bili) + 11.2*log(inr) + 9.57*log(cr) + 6.43;
+        if (score < 6) score = 6;
+        if (score > 40) score = 40;
+        const char* n = (score < 10) ? "Low (3mo mort ~2%)"
+                      : (score < 20) ? "Moderate (~6-20%)"
+                      : (score < 30) ? "High (~25-50%)"
+                      : "Very high (>50%)";
+        show("MELD", "Score", score, n);
+    }
+};
+
+MedicalScores gMedScores;
+class MedicalHeme {
+public:
+    void run() {
+        const char* items[] = {
+            "ANC (absolute neutrophil count)",
+            "MCV / MCH / MCHC",
+            "Mentzer index",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Hematology", items, 4);
+        if (s < 0 || s == 3) return;
+        switch (s) { case 0: anc(); break; case 1: rbcIdx(); break; case 2: mentzer(); break; }
+        }
+    }
+private:
+    double ask(const char* p, const char* d) {
+        char b[24]; strncpy(b, d, 24); b[23] = 0;
+        if (!DM.inputLine(p, b, sizeof(b))) return NAN;
+        return atof(b);
+    }
+
+    void show3(const char* t, const char* l1, double v1, const char* l2, double v2, const char* l3, double v3) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans S:BMP","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[48]; char vs[24];
+        formatNum(v1, vs, sizeof(vs)); snprintf(l, sizeof(l), "%s = %s", l1, vs); d.drawString(l, 4, HDR_H + 8);
+        formatNum(v2, vs, sizeof(vs)); snprintf(l, sizeof(l), "%s = %s", l2, vs); d.drawString(l, 4, HDR_H + 24);
+        formatNum(v3, vs, sizeof(vs)); snprintf(l, sizeof(l), "%s = %s", l3, vs); d.drawString(l, 4, HDR_H + 40);
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans", C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("heme");
+        }
+    }
+
+    void anc() {
+        double wbc = ask("WBC (x10^3/uL):", "5.0"); if (isnan(wbc) || wbc <= 0) return;
+        double neut = ask("% neutrophils:", "60"); if (isnan(neut) || neut < 0 || neut > 100) return;
+        double bands = ask("% bands:", "0"); if (isnan(bands) || bands < 0 || bands > 100) return;
+        double a = wbc * (neut + bands) * 10.0;
+        show3("ANC", "ANC", a, "WBC", wbc, "Neut+Bands%", neut+bands);
+    }
+
+    void rbcIdx() {
+        double hb = ask("Hb (g/dL):", "14"); if (isnan(hb) || hb <= 0) return;
+        double hct = ask("Hct (%):", "42"); if (isnan(hct) || hct <= 0) return;
+        double rbc = ask("RBC (x10^6/uL):", "5.0"); if (isnan(rbc) || rbc <= 0) return;
+        double mcv = hct * 10.0 / rbc;
+        double mch = hb * 10.0 / rbc;
+        double mchc = hb * 100.0 / hct;
+        show3("RBC Indices", "MCV", mcv, "MCH", mch, "MCHC", mchc);
+    }
+
+    void mentzer() {
+        double mcv = ask("MCV (fL):", "80"); if (isnan(mcv) || mcv <= 0) return;
+        double rbc = ask("RBC (x10^6/uL):", "5.0"); if (isnan(rbc) || rbc <= 0) return;
+        double mi = mcv / rbc;
+        show3("Mentzer Index", "MI", mi, "MCV", mcv, "RBC", rbc);
+    }
+};
+
+MedicalHeme gMedHeme;
+class MedicalPulm {
+public:
+    void run() {
+        const char* items[] = {
+            "P/F ratio (ARDS)",
+            "A-a gradient",
+            "Oxygenation index (OI)",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Pulmonology", items, 4);
+        if (s < 0 || s == 3) return;
+        switch (s) { case 0: pfRatio(); break; case 1: aaGrad(); break; case 2: oxIdx(); break; }
+        }
+    }
+private:
+    double ask(const char* p, const char* d) {
+        char b[24]; strncpy(b, d, 24); b[23] = 0;
+        if (!DM.inputLine(p, b, sizeof(b))) return NAN;
+        return atof(b);
+    }
+
+    void show(const char* t, const char* l1, double v1, const char* n) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans S:BMP","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[48]; char vs[24];
+        formatNum(v1, vs, sizeof(vs));
+        snprintf(l, sizeof(l), "%s = %s", l1, vs); d.drawString(l, 4, HDR_H + 8);
+        if (n && *n) { d.setTextColor(C_ACC2, C_BG); d.drawString(n, 4, HDR_H + 28); }
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) { DM.notify("-> Ans", C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S')) DM.saveBMPAuto("pulm");
+        }
+    }
+
+    void pfRatio() {
+        double pao2 = ask("PaO2 (mmHg):", "80"); if (isnan(pao2) || pao2 <= 0) return;
+        double fio2 = ask("FiO2 (0-1):", "0.21"); if (isnan(fio2) || fio2 <= 0) return;
+        double pf = pao2 / fio2;
+        const char* n = (pf < 100) ? "Severe ARDS (<100)"
+                      : (pf < 200) ? "Moderate ARDS (100-200)"
+                      : (pf < 300) ? "Mild ARDS (200-300)"
+                      : "Normal (>300)";
+        show("P/F Ratio", "PF", pf, n);
+    }
+
+    void aaGrad() {
+        double pao2 = ask("PaO2:", "80");  if (isnan(pao2) || pao2 <= 0) return;
+        double paco2 = ask("PaCO2:", "40"); if (isnan(paco2) || paco2 <= 0) return;
+        double fio2 = ask("FiO2 (0-1):", "0.21"); if (isnan(fio2) || fio2 <= 0 || fio2 > 1) return;
+        double age = ask("Age (y):", "40"); if (isnan(age) || age <= 0) return;
+        double pao2alv = fio2 * 713 - paco2 / 0.8;
+        double grad = pao2alv - pao2;
+        double expNorm = age / 4.0 + 4;
+        char nb[40]; snprintf(nb, sizeof(nb), "Exp normal = %.1f", expNorm);
+        show("A-a Gradient", "Aa", grad, nb);
+    }
+
+    void oxIdx() {
+        double map = ask("Mean airway P:", "10"); if (isnan(map) || map <= 0) return;
+        double fio2 = ask("FiO2 (0-1):", "0.5"); if (isnan(fio2) || fio2 <= 0 || fio2 > 1) return;
+        double pao2 = ask("PaO2:", "60"); if (isnan(pao2) || pao2 <= 0) return;
+        double oi = (map * fio2 * 100.0) / pao2;
+        const char* n = (oi > 25) ? "Severe (>25)" : (oi > 15) ? "Moderate (15-25)" : "Mild (<15)";
+        show("Oxygenation Index", "OI", oi, n);
+    }
+};
+
+MedicalPulm gMedPulm;
+class MedicalCardio {
+public:
+    void run() {
+        const char* items[] = {
+            "MAP (mean arterial pressure)",
+            "Pulse pressure",
+            "Rate-pressure product",
+            "Shock index",
+            "Back"
+        };
+        for (;;) {
+        int s = DM.menu("Cardiology / Vitals", items, 5);
+        if (s < 0 || s == 4) return;
+        switch (s) {
+            case 0: mapCalc();  break;
+            case 1: ppCalc();   break;
+            case 2: rppCalc();  break;
+            case 3: shockIdx(); break;
+        }
+        }
+    }
+private:
+    double ask(const char* p, const char* d) {
+        char b[24]; strncpy(b, d, 24); b[23] = 0;
+        if (!DM.inputLine(p, b, sizeof(b))) return NAN;
+        return atof(b);
+    }
+
+    void show(const char* t, const char* l1, double v1,
+              const char* l2, double v2, const char* n) {
+        auto& d = M5Cardputer.Display;
+        d.fillScreen(C_BG); DM.header(t); DM.footer("Y:Ans S:BMP","","ESC:back");
+        d.setTextColor(C_OK, C_BG);
+        char l[48]; char vs[24];
+        formatNum(v1, vs, sizeof(vs));
+        snprintf(l, sizeof(l), "%s = %s", l1, vs); d.drawString(l, 4, HDR_H + 8);
+        if (l2 && *l2) {
+            formatNum(v2, vs, sizeof(vs));
+            snprintf(l, sizeof(l), "%s = %s", l2, vs); d.drawString(l, 4, HDR_H + 24);
+        }
+        if (n && *n) { d.setTextColor(C_ACC2, C_BG); d.drawString(n, 4, HDR_H + 40); }
+        G.ans = v1; G.ansComplex = false;
+        while (true) {
+            if (!DM.pollKeys()) { delay(15); continue; }
+            auto st = M5Cardputer.Keyboard.keysState();
+            if (IS_ESC) return;
+            if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')) {
+                DM.notify("-> Ans", C_OK); return; }
+            if (M5Cardputer.Keyboard.isKeyPressed('s')||M5Cardputer.Keyboard.isKeyPressed('S'))
+                DM.saveBMPAuto("cardio");
+        }
+    }
+
+    void mapCalc() {
+        double sbp = ask("SBP:", "120"); if (isnan(sbp) || sbp <= 0) return;
+        double dbp = ask("DBP:", "80");  if (isnan(dbp) || dbp <= 0) return;
+        if (dbp > sbp) { DM.notify("DBP must be <= SBP", C_ERR); return; }
+        double m = (sbp + 2*dbp) / 3.0;
+        const char* n = (m < 65) ? "LOW (<65) hypoperfusion"
+                      : (m > 100) ? "HIGH (>100)"
+                      : "Normal (70-100)";
+        show("MAP", "MAP", m, "SBP", sbp, n);
+    }
+
+    void ppCalc() {
+        double sbp = ask("SBP:", "120"); if (isnan(sbp) || sbp <= 0) return;
+        double dbp = ask("DBP:", "80");  if (isnan(dbp) || dbp <= 0) return;
+        if (dbp > sbp) { DM.notify("DBP must be <= SBP", C_ERR); return; }
+        show("Pulse Pressure", "PP", sbp-dbp, "SBP-DBP", sbp-dbp, "");
+    }
+
+    void rppCalc() {
+        double hr = ask("HR (bpm):", "70"); if (isnan(hr) || hr <= 0) return;
+        double sbp = ask("SBP:", "120");    if (isnan(sbp) || sbp <= 0) return;
+        double v = hr * sbp;
+        const char* n = (v > 20000) ? "HIGH (>20000)" : "Normal";
+        show("Rate-Pressure Product", "RPP", v, "HR*SBP", v, n);
+    }
+
+    void shockIdx() {
+        double hr = ask("HR:", "80");  if (isnan(hr) || hr <= 0) return;
+        double sbp = ask("SBP:", "120"); if (isnan(sbp) || sbp <= 0) return;
+        double si = hr / sbp;
+        const char* n = (si >= 0.9) ? "Elevated (>=0.9)" : "Normal (<0.9)";
+        show("Shock Index", "SI", si, "HR/SBP", si, n);
+    }
+};
+
+MedicalCardio gMedCardio;
+class MedicalCalc {
+public:
+    void run() {
+        while (true) {
+            const char* top[] = {
+                "Clinical Calculators",
+                "Epidemiology & Statistics",
+                "Back"
+            };
+            int s = DM.menu("Medical Calculator", top, 3);
+            if (s < 0 || s == 2) return;
+            if (s == 0) clinicalMenu();
+            else         epiMenu();
+        }
+    }
+private:
+    void clinicalMenu() {
+        while (true) {
+            const char* items[] = {
+                "Cardiology / Vitals (MAP/PP/RPP/SI)",
+                "Pulmonology (P/F, A-a, OI)",
+                "Hematology (ANC, RBC idx, Mentzer)",
+                "Clinical Scores (GCS/CURB/qSOFA/Child/MELD)",
+                "Body Composition (BMI/BSA/IBW/ABW)",
+                "Renal Function (eGFR/CrCl)",
+                "Lytes / Acid-Base (Ca/Na/AG/Osm)",
+                "Endocrine (HOMA-IR / Free T4)",
+                "Obstetrics (EDD / GA)",
+                "Pharmacokinetics (t1/2, LD/MD)",
+                "Back"
+            };
+            int s = DM.menu("Clinical Calculators", items, 11);
+            if (s < 0 || s == 10) return;
+            switch (s) {
+                case 0: gMedCardio.run(); break;
+                case 1: gMedPulm.run();   break;
+                case 2: gMedHeme.run();   break;
+                case 3: gMedScores.run(); break;
+                case 4: gMedBody.run();   break;
+                case 5: gMedRenal.run();  break;
+                case 6: gMedLytes.run();  break;
+                case 7: gMedEndo.run();   break;
+                case 8: gMedOB.run();     break;
+                case 9: gMedPK.run();     break;
+            }
+        }
+    }
+
+    void epiMenu() {
+        while (true) {
+            const char* items[] = {
+                "Survival Analysis (KM/Log-rank/Cox)",
+                "Meta-Analysis (Forest/Funnel/Egger)",
+                "Outbreak / Source Trace",
+                "Risk / Odds Ratio (2x2)",
+                "Confidence Intervals (mean/prop)",
+                "Back"
+            };
+            int s = DM.menu("Epidemiology & Statistics", items, 6);
+            if (s < 0 || s == 5) return;
+            switch (s) {
+                case 0: gSurvival.run();               break;
+                case 1: gMeta.run();                   break;
+                case 2: gStatStrata.medicalOutbreak(); break;
+                case 3: gStatNonpar.medicalRiskMenu(); break;
+                case 4: gStatNonpar.medicalCIMenu();   break;
+            }
+        }
+    }
+};
+
+MedicalCalc gMedical;
 class CASEngine {
 public:
     void run() {
@@ -10401,6 +15493,7 @@ private:
         p.normalize();
         return true;
     }
+
     void polyEval() {
         char b[64] = "1+2x-x^2";
         if (!DM.inputLine("p(x):", b, sizeof(b))) return;
@@ -10415,6 +15508,7 @@ private:
         DM.notify(m, C_OK, 1500);
         G.ans = v;
     }
+
     void polyDiff() {
         char b[64] = "x^3-2x+1";
         if (!DM.inputLine("p(x):", b, sizeof(b))) return;
@@ -10424,6 +15518,7 @@ private:
         char r[120]; d.toString(r, sizeof(r));
         showResult("p'(x)", r);
     }
+
     void polyInteg() {
         char b[64] = "3x^2-2x+1";
         if (!DM.inputLine("p(x):", b, sizeof(b))) return;
@@ -10434,6 +15529,7 @@ private:
         char r2[140]; snprintf(r2, sizeof(r2), "%s + C", r);
         showResult("Integral", r2);
     }
+
     void polyOp(bool isMul) {
         char a[64] = "x+1", b[64] = "x-1";
         if (!DM.inputLine("p(x):", a, sizeof(a))) return;
@@ -10444,6 +15540,7 @@ private:
         char r[140]; R.toString(r, sizeof(r));
         showResult(isMul ? "p*q" : "p+q", r);
     }
+
     void polyRoots() {
         char b[64] = "x^2-1";
         if (!DM.inputLine("p(x):", b, sizeof(b))) return;
@@ -10461,6 +15558,7 @@ private:
         }
         DM.waitEsc();
     }
+
     void taylor() {
         char b[80] = "sin(x)";
         if (!DM.inputLine("f(x):", b, sizeof(b))) return;
@@ -10510,6 +15608,7 @@ private:
         if (first) snprintf(r, sizeof(r), "0");
         showResult("Taylor", r);
     }
+
     void limitN() {
         char b[80] = "sin(x)/x";
         if (!DM.inputLine("f(x):", b, sizeof(b))) return;
@@ -10529,6 +15628,7 @@ private:
         }
         DM.notify(m, C_OK, 2000);
     }
+
     void substitute() {
         char b[80] = "x^2+3x+2";
         if (!DM.inputLine("f(x):", b, sizeof(b))) return;
@@ -10548,6 +15648,7 @@ private:
         out[outP] = 0;
         showResult("Substituted", out);
     }
+
     void showResult(const char* title, const char* r) {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header(title); DM.footer("","","ESC:back");
@@ -10556,8 +15657,8 @@ private:
         DM.waitEsc();
     }
 };
-CASEngine gCAS;
 
+CASEngine gCAS;
 class SettingsNVS {
 public:
     void load() {
@@ -10569,12 +15670,32 @@ public:
         G.normMode   = p.getInt("norm",       1);
         G.rpn        = p.getBool("rpn",       false);
         G.fracDisplay= p.getBool("frac",      false);
+        G.autoOffMin = p.getInt("autooff", 10);
         String ssid  = p.getString("wifissid", "");
         String pass  = p.getString("wifipass", "");
         strncpy(G.wifiSSID, ssid.c_str(), 32);
         strncpy(G.wifiPASS, pass.c_str(), 32);
+        gUserFns.clear();
+        String fns = p.getString("userfns", "");
+        int fstart = 0;
+        while (fstart < (int)fns.length()) {
+            int nl2 = fns.indexOf('\n', fstart);
+            if (nl2 < 0) nl2 = fns.length();
+            String line = fns.substring(fstart, nl2);
+            fstart = nl2 + 1;
+            int t1 = line.indexOf('\t');
+            if (t1 < 0) continue;
+            int t2 = line.indexOf('\t', t1 + 1);
+            if (t2 < 0) continue;
+            String nm = line.substring(0, t1);
+            String prm = line.substring(t1 + 1, t2);
+            String bd = line.substring(t2 + 1);
+            if (nm.length() > 0 && nm.length() < 12 && prm.length() == 1 && bd.length() > 0 && bd.length() < 64)
+                gUserFns.add(nm.c_str(), prm[0], bd.c_str());
+        }
         p.end();
     }
+
     void save() {
         Preferences p;
         p.begin("pomas", false);
@@ -10584,13 +15705,25 @@ public:
         p.putInt("norm",   G.normMode);
         p.putBool("rpn",   G.rpn);
         p.putBool("frac",  G.fracDisplay);
+        p.putInt("autooff", G.autoOffMin);
         p.putString("wifissid", G.wifiSSID);
         p.putString("wifipass", G.wifiPASS);
+        String fns = "";
+        for (int i = 0; i < gUserFns.n; i++) {
+            if (!gUserFns.f[i].active) continue;
+            fns += gUserFns.f[i].name;
+            fns += "\t";
+            fns += (char)gUserFns.f[i].param;
+            fns += "\t";
+            fns += gUserFns.f[i].body;
+            fns += "\n";
+        }
+        p.putString("userfns", fns);
         p.end();
     }
 };
-SettingsNVS gNVS;
 
+SettingsNVS gNVS;
 class WiFiMaxima {
 public:
     void run() {
@@ -10624,8 +15757,9 @@ private:
         if (n <= 0) { DM.notify("No networks", C_WARN); return; }
         if (n > 30) n = 30;
         char** labels = (char**)malloc(n * sizeof(char*));
+        if (!labels) { WiFi.scanDelete(); DM.notify("malloc fail", C_ERR); return; }
         for (int i = 0; i < n; i++) {
-            labels[i] = (char*)malloc(48);
+            labels[i] = (char*)malloc(48); if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); WiFi.scanDelete(); DM.notify("malloc fail", C_ERR); return; }
             String ssid = WiFi.SSID(i);
             int rssi = WiFi.RSSI(i);
             wifi_auth_mode_t auth = WiFi.encryptionType(i);
@@ -10650,16 +15784,18 @@ private:
         free(labels);
         WiFi.scanDelete();
     }
+
     void setCred() {
         char ssid[33]; strncpy(ssid, G.wifiSSID, 32); ssid[32]=0;
         if (!DM.inputLine("SSID:", ssid, sizeof(ssid))) return;
         char pass[33]; strncpy(pass, G.wifiPASS, 32); pass[32]=0;
         if (!DM.inputLine("Pass:", pass, sizeof(pass))) return;
-        strncpy(G.wifiSSID, ssid, 32);
-        strncpy(G.wifiPASS, pass, 32);
+        strncpy(G.wifiSSID, ssid, 32); G.wifiSSID[32] = 0;
+        strncpy(G.wifiPASS, pass, 32); G.wifiPASS[32] = 0;
         gNVS.save();
         DM.notify("Saved", C_OK);
     }
+
     void connect() {
         if (G.wifiSSID[0] == 0) { DM.notify("No SSID set", C_ERR); return; }
         auto& d = M5Cardputer.Display;
@@ -10711,7 +15847,7 @@ private:
             delay(250);
             if (DM.pollKeys()) {
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) {
+                if (IS_ESC) {
                     WiFi.disconnect(true, true);
                     DM.notify("Aborted", C_WARN);
                     return;
@@ -10752,11 +15888,13 @@ private:
             DM.waitEsc();
         }
     }
+
     void disconnect() {
         WiFi.disconnect();
         G.wifiOK = false;
         DM.notify("Disconnected", C_OK);
     }
+
     void status() {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Wi-Fi Status"); DM.footer("","","ESC:back");
@@ -10773,6 +15911,7 @@ private:
         }
         DM.waitEsc();
     }
+
     void sendMaxima() {
         if (!G.wifiOK || WiFi.status() != WL_CONNECTED) { DM.notify("Not connected", C_ERR); return; }
         char url[128] = "http://YOUR-PROXY-HOST/maxima?expr=";
@@ -10804,8 +15943,8 @@ private:
         http.end();
     }
 };
-WiFiMaxima gWiFi;
 
+WiFiMaxima gWiFi;
 class PowerInfo {
 public:
     void show() {
@@ -10851,7 +15990,7 @@ public:
             while (true) {
                 if (!DM.pollKeys()) { delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 if (M5Cardputer.Keyboard.isKeyPressed('r') || M5Cardputer.Keyboard.isKeyPressed('R')) { retrySD(); break; }
                 if (M5Cardputer.Keyboard.isKeyPressed('t') || M5Cardputer.Keyboard.isKeyPressed('T')) { sdTest(); break; }
             }
@@ -10906,6 +16045,7 @@ private:
         }
         DM.waitEsc();
     }
+
     void sdTest() {
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("SD Test"); DM.footer("","","ESC:back");
@@ -10930,8 +16070,8 @@ private:
         DM.waitEsc();
     }
 };
-PowerInfo gPwr;
 
+PowerInfo gPwr;
 // ── CSVストリーミング統計 ──
 class CsvStream {
     static const int MAXC = 32;
@@ -10948,6 +16088,7 @@ class CsvStream {
         for (int i=0;i<MAXC;i++){ cnt[i]=0; mean[i]=M2[i]=M3[i]=M4[i]=0; mn[i]=mx[i]=0; cname[i][0]=0; }
         pN=0; pmx=pmy=pM2x=pM2y=pC=0;
     }
+
     void update(int c, double x) {
         if (c<0||c>=MAXC) return;
         long n0 = cnt[c], n = n0 + 1;
@@ -10955,12 +16096,13 @@ class CsvStream {
         double dn = delta / n, dn2 = dn*dn;
         double t1 = delta*dn*(double)n0;
         mean[c] += dn;
-        M4[c] += t1*dn2*(double)(n*n - 3*n + 3) + 6.0*dn2*M2[c] - 4.0*dn*M3[c];
+        M4[c] += t1*dn2*((double)n*n - 3.0*(double)n + 3.0) + 6.0*dn2*M2[c] - 4.0*dn*M3[c];
         M3[c] += t1*dn*(double)(n-2) - 3.0*dn*M2[c];
         M2[c] += t1;
         if (n0==0){ mn[c]=mx[c]=x; } else { if(x<mn[c])mn[c]=x; if(x>mx[c])mx[c]=x; }
         cnt[c]=n;
     }
+
     void updatePair(double x, double y) {
         long n = pN + 1;
         double dx = x - pmx, dy = y - pmy;
@@ -10970,6 +16112,7 @@ class CsvStream {
         pC   += dx*(y-pmy);
         pN = n;
     }
+
     void captureHeader(const String& line) {
         int col=0, from=0;
         while (col < MAXC) {
@@ -10982,12 +16125,14 @@ class CsvStream {
             from = comma+1; col++;
         }
     }
+
     void drawKV(const char* k, double v, int y) {
         auto& d = M5Cardputer.Display;
         char vs[32]; formatNum(v, vs, sizeof(vs));
         char ln[56]; snprintf(ln,sizeof(ln),"%-10s %s", k, vs);
         d.drawString(ln, 8, y);
     }
+
     void showResults(long rows) {
         auto& d = M5Cardputer.Display;
         int page = 0;
@@ -11038,7 +16183,7 @@ class CsvStream {
             while (true) {
                 if (!DM.pollKeys()){ delay(15); continue; }
                 auto st = M5Cardputer.Keyboard.keysState();
-                if (st.fn && IS_ESC) return;
+                if (IS_ESC) return;
                 if (IS_RIGHT){ page=(page+1)%pages; break; }
                 if (IS_LEFT) { page=(page-1+pages)%pages; break; }
                 if (M5Cardputer.Keyboard.isKeyPressed('y')||M5Cardputer.Keyboard.isKeyPressed('Y')){
@@ -11097,40 +16242,49 @@ public:
         showResults(rows);
     }
 };
+
 CsvStream gCsvStream;
-
 unsigned long gLastInputT = 0;
-
 void aboutScreen() {
     auto& d = M5Cardputer.Display;
-    d.fillScreen(C_BG); DM.header("About"); DM.footer("","","ESC:back");
-    int y = HDR_H + 4;
-    d.setTextSize(2);
-    d.setTextColor(C_ACC, C_BG);
-    d.drawString(POMAS_NAME " " POMAS_VER, 4, y); y += 22;
-    d.setTextSize(1);
-    d.setTextColor(C_FG, C_BG);
-    d.drawString("Pocket Mathematics Station", 4, y); y += 11;
-    d.setTextColor(C_DIM, C_BG);
-    d.drawString("for M5 Cardputer-Adv", 4, y); y += 11;
-    d.drawString("Modes: Calc/CAS/Stat", 4, y); y += 10;
-    d.drawString("       SciRef/Graph/uLisp", 4, y); y += 10;
-    d.drawString("       Sheet/WiFi", 4, y); y += 10;
-    d.setTextColor(C_OK, C_BG);
-    d.drawString(POMAS_CRED, 4, y);
-    DM.waitEsc();
+    auto drawAbout = [&]() {
+        d.fillScreen(C_BG); DM.header("About"); DM.footer("S:splash","","ESC:back");
+        int y = HDR_H + 4;
+        d.setTextSize(2);
+        d.setTextColor(C_ACC, C_BG);
+        d.drawString(POMAS_NAME " " POMAS_VER, 4, y); y += 22;
+        d.setTextSize(1);
+        d.setTextColor(C_FG, C_BG);
+        d.drawString("Pocket Mathematics Station", 4, y); y += 11;
+        d.setTextColor(C_DIM, C_BG);
+        d.drawString("for M5 Cardputer-Adv", 4, y); y += 11;
+        d.drawString("Modes: Calc/CAS/Stat", 4, y); y += 10;
+        d.drawString("       SciRef/Graph/uLisp", 4, y); y += 10;
+        d.drawString("       Sheet/WiFi", 4, y); y += 10;
+        d.setTextColor(C_OK, C_BG);
+        d.drawString(POMAS_CRED, 4, y);
+    };
+    drawAbout();
+    while (true) {
+        if (!DM.pollKeys()) { delay(15); continue; }
+        auto st = M5Cardputer.Keyboard.keysState();
+        if (IS_ESC) return;
+        if (M5Cardputer.Keyboard.isKeyPressed('s') || M5Cardputer.Keyboard.isKeyPressed('S')) {
+            DM.splash();
+            drawAbout();
+        }
+    }
 }
 
 void statSubMenu() {
     while (true) {
         const char* items[] = {
             "Lists & Descriptive","Regression / Multi","Tests (z/t/F/ANOVA/chi)",
-            "Non-parametric / Risk","Distributions","Multivariate (PCA/k-means/etc)",
-            "Stratified (M-H)","Survival (KM/Cox)","Meta-analysis",
-            "17 Statistical Graphs","CSV Stream Stats (SD)","Back"
+            "Non-parametric","Distributions","Multivariate (PCA/k-means/etc)",
+            "Stratified (M-H)","17 Statistical Graphs","CSV Stream Stats (SD)","Back"
         };
-        int s = DM.menu("Statistics", items, 12);
-        if (s < 0 || s == 11) return;
+        int s = DM.menu("Statistics", items, 10);
+        if (s < 0 || s == 9) return;
         switch (s) {
             case 0: gStatCore.run();    break;
             case 1: gStatRegress.run(); break;
@@ -11139,31 +16293,136 @@ void statSubMenu() {
             case 4: gDistBrowser.run(); break;
             case 5: gStatMV.run();      break;
             case 6: gStatStrata.run();  break;
-            case 7: gSurvival.run();    break;
-            case 8: gMeta.run();        break;
-            case 9: gStatGraphs.run();  break;
-            case 10: gCsvStream.run();  break;
+            case 7: gStatGraphs.run();  break;
+            case 8: gCsvStream.run();   break;
         }
     }
 }
 
 void settingsScreen();
+void listUserFns() {
+    auto& d = M5Cardputer.Display;
+    d.fillScreen(C_BG); DM.header("User Functions"); DM.footer("","","ESC:back");
+    d.setTextColor(C_FG, C_BG);
+    int y = HDR_H + 2;
+    if (gUserFns.n == 0) { d.drawString("(none)", 4, y); }
+    for (int i = 0; i < gUserFns.n && y < LCD_H - FTR_H - 4; i++) {
+        if (!gUserFns.f[i].active) continue;
+        char l[72];
+        snprintf(l, sizeof(l), "%s(%c) = %s", gUserFns.f[i].name, gUserFns.f[i].param, gUserFns.f[i].body);
+        d.drawString(l, 4, y);
+        y += 11;
+    }
+    DM.waitEsc();
+}
+
+void exportUserFns() {
+    if (!G.sdOK) { DM.notify("No SD", C_ERR); return; }
+    SdGuard guard;
+    File f = SD.open("/userfns.txt", FILE_WRITE);
+    if (!f) { DM.notify("Open fail", C_ERR); return; }
+    for (int i = 0; i < gUserFns.n; i++) {
+        if (!gUserFns.f[i].active) continue;
+        f.print(gUserFns.f[i].name);
+        f.print('\t');
+        f.print((char)gUserFns.f[i].param);
+        f.print('\t');
+        f.println(gUserFns.f[i].body);
+    }
+    f.close();
+    char m[32]; snprintf(m, sizeof(m), "Exported %d fns", gUserFns.n);
+    DM.notify(m, C_OK, 1200);
+}
+
+void importUserFns(bool replaceAll) {
+    if (!G.sdOK) { DM.notify("No SD", C_ERR); return; }
+    SdGuard guard;
+    File f = SD.open("/userfns.txt");
+    if (!f) { DM.notify("Not found", C_ERR); return; }
+    if (replaceAll) gUserFns.clear();
+    int added = 0;
+    while (f.available()) {
+        String line = f.readStringUntil('\n');
+        line.trim();
+        if (line.length() == 0) continue;
+        int t1 = line.indexOf('\t');
+        if (t1 < 0) continue;
+        int t2 = line.indexOf('\t', t1 + 1);
+        if (t2 < 0) continue;
+        String nm = line.substring(0, t1);
+        String prm = line.substring(t1 + 1, t2);
+        String bd = line.substring(t2 + 1);
+        if (nm.length() > 0 && nm.length() < 12 && prm.length() == 1 && bd.length() > 0 && bd.length() < 64) {
+            gUserFns.remove(nm.c_str());
+            if (gUserFns.add(nm.c_str(), prm[0], bd.c_str())) added++;
+        }
+    }
+    f.close();
+    char m[40]; snprintf(m, sizeof(m), "Imported %d fns", added);
+    DM.notify(m, C_OK, 1200);
+}
+
+void deleteUserFn() {
+    if (gUserFns.n == 0) { DM.notify("None", C_DIM); return; }
+    char** labels = (char**)malloc(gUserFns.n * sizeof(char*));
+    if (!labels) { DM.notify("malloc fail", C_ERR); return; }
+    for (int i = 0; i < gUserFns.n; i++) {
+        labels[i] = (char*)malloc(40); if (!labels[i]) { for (int k = 0; k < i; k++) free(labels[k]); free(labels); return; }
+        snprintf(labels[i], 40, "%s(%c)", gUserFns.f[i].name, gUserFns.f[i].param);
+    }
+
+    const char** clabels = (const char**)labels;
+    int s = DM.menu("Delete which?", clabels, gUserFns.n);
+    for (int i = 0; i < gUserFns.n; i++) free(labels[i]);
+    free(labels);
+    if (s >= 0 && s < gUserFns.n) {
+        char nm[12]; strncpy(nm, gUserFns.f[s].name, 11); nm[11] = 0;
+        gUserFns.remove(nm);
+        DM.notify("Deleted", C_OK);
+    }
+}
+
+void userFuncsMenu() {
+    while (true) {
+        const char* items[] = {
+            "List functions",
+            "SD export (/userfns.txt)",
+            "SD import (merge)",
+            "SD import (replace)",
+            "Delete one",
+            "Clear all",
+            "Back"
+        };
+        int s = DM.menu("User Functions", items, 7);
+        if (s < 0 || s == 6) return;
+        switch (s) {
+            case 0: listUserFns(); break;
+            case 1: exportUserFns(); break;
+            case 2: importUserFns(false); break;
+            case 3: importUserFns(true); break;
+            case 4: deleteUserFn(); break;
+            case 5: if (DM.confirm("Clear all user fns?")) { gUserFns.clear(); DM.notify("Cleared", C_OK); } break;
+        }
+    }
+}
 
 void toolsMenu() {
     while (true) {
         const char* items[] = {
             "Spreadsheet (45x26)","uLisp Interpreter","Wi-Fi/Maxima (srv)",
+            "User Functions (NVS/SD)",
             "Power / About","Settings (NVS persistent)","Save BMP screenshot now","Back"
         };
-        int s = DM.menu("Tools", items, 7);
-        if (s < 0 || s == 6) return;
+        int s = DM.menu("Tools", items, 8);
+        if (s < 0 || s == 7) return;
         switch (s) {
             case 0: gSheet.run();      break;
             case 1: gULisp.run();      break;
             case 2: gWiFi.run();       break;
-            case 3: gPwr.show();       break;
-            case 4: settingsScreen();  break;
-            case 5: DM.saveBMPAuto("screen"); break;
+            case 3: userFuncsMenu();   break;
+            case 4: gPwr.show();       break;
+            case 5: settingsScreen();  break;
+            case 6: DM.saveBMPAuto("screen"); break;
         }
     }
 }
@@ -11172,10 +16431,10 @@ void settingsScreen() {
     while (true) {
         const char* items[] = {
             "Angle: DEG/RAD/GRAD","Display: Norm/Fix/Sci/Eng","Display digits",
-            "Save settings now","Reset all (clear NVS)","Back"
+            "Auto power off (min)","Save settings now","Reset all (clear NVS)","Back"
         };
-        int s = DM.menu("Settings", items, 6);
-        if (s < 0 || s == 5) return;
+        int s = DM.menu("Settings", items, 7);
+        if (s < 0 || s == 6) return;
         if (s == 0) {
             const char* a[] = {"DEG","RAD","GRAD"};
             int x = DM.menu("Angle", a, 3, G.angle);
@@ -11193,8 +16452,15 @@ void settingsScreen() {
                 if (v >= 0 && v <= 9) G.dispDigits = v;
             }
         }
-        else if (s == 3) { gNVS.save(); DM.notify("Saved to NVS", C_OK); }
-        else if (s == 4) {
+        else if (s == 3) {
+            char b[8]; snprintf(b, sizeof(b), "%d", G.autoOffMin);
+            if (DM.inputLine("auto off min (0=off):", b, sizeof(b))) {
+                int v = atoi(b);
+                if (v >= 0 && v <= 600) G.autoOffMin = v;
+            }
+        }
+        else if (s == 4) { gNVS.save(); DM.notify("Saved to NVS", C_OK); }
+        else if (s == 5) {
             if (DM.confirm("Clear NVS settings?")) {
                 Preferences p; p.begin("pomas", false); p.clear(); p.end();
                 DM.notify("NVS cleared", C_OK);
@@ -11251,26 +16517,28 @@ void setup() {
 
 void loop() {
     const char* items[] = {
-        "Calculator","CAS","Statistics","Scientific Reference",
+        "Calculator","CAS","Statistics","Medical Calculator","Scientific Reference",
         "Graph","Tools (Sheet/uLisp/WiFi)","About"
     };
-    int s = DM.menu(POMAS_NAME " " POMAS_VER, items, 7);
+    int s = DM.menu(POMAS_NAME " " POMAS_VER, items, 8);
     gLastInputT = millis();
     switch (s) {
         case 0: gCalc.run();       break;
         case 1: gCAS.run();        break;
         case 2: statSubMenu();     break;
-        case 3: gSciRef.run();     break;
-        case 4: gGraph.run();      break;
-        case 5: toolsMenu();       break;
-        case 6: aboutScreen();     break;
+        case 3: gMedical.run();    break;
+        case 4: gSciRef.run();     break;
+        case 5: gGraph.run();      break;
+        case 6: toolsMenu();       break;
+        case 7: aboutScreen();     break;
         default: break;
     }
-    if (millis() - gLastInputT > 600000UL) {
+    if (G.autoOffMin > 0 && millis() - gLastInputT > (unsigned long)G.autoOffMin * 60000UL) {
 #ifdef ARDUINO_M5STACK_CARDPUTER
         M5Cardputer.Power.powerOff();
 #endif
     }
+
     static unsigned long lastSave = 0;
     if (millis() - lastSave > 60000UL) {
         gNVS.save();

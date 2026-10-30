@@ -1,0 +1,538 @@
+PoMaS 0.92 機能拡張プロジェクト 引き継ぎ書（全完了版）
+最終更新: 2026-10-27  UI/UX修正 + 部分完了6項目解消 + キーアサイン/ESC階層修正 完了
+
+## 1. プロジェクト概要
+| 項目 | 内容 |
+|---|---|
+| ファイル | C:\Users\YNGMT\Documents\Arduino\pomas_0_92\pomas_0_92.ino |
+| 対象機 | M5Stack Cardputer-Adv (ESP32-S3FN8, PSRAMなし) |
+| ビルド | FQBN: m5stack:esp32:m5stack_cardputer:FlashSize=8M,PartitionScheme=huge_app |
+| Flash上限 | 3,145,728 B |
+| RAM上限 | 327,680 B |
+| 改行コード | LF (CRLF=0) / BOMなし |
+| 最終行数 | 16,007行 |
+
+## 2. 絶対厳守ルール（違反禁止）
+### 2-1. 指示の優先順位
+「待て」 > 「整理しろ」 > 「機能実装を先にやれ」 > 「コンパイルしろ」
+
+### 2-2. コンパイル指示の禁止
+- ユーザーが「コンパイルしろ」「ビルドした」と明示するまで Ctrl+R を提案しない
+- パッチ提示後に「結果を貼ってください」「Ctrl+Rしてください」を書かない
+- パッチ提示はパッチのみで完結させる
+
+### 2-3. コマンド出力仕様
+- 各コマンドに `# [N/M] 短い説明` タイトルを必ず付ける
+- 1コマンド=1行で完結（if/elseif/else の複数行分割は構文エラーになるため禁止）
+- ヒアストリング `@'...'@` 単一引用符、`$b -replace "`r?`n","`n"` で改行統一
+- 1回の提示で最大4個（2KB×4以下、巨大ヒアストリングでターミナルクラッシュ回避）
+- 「実行してください」「次のステップ」等の定型文を書かない
+
+### 2-4. 「待て」「整理しろ」遵守
+- 「待て」→ 即座に完全沈黙、次の指示まで何も出さない
+- 「整理しろ」→ 表のみ、コード出力禁止、勝手に実装しない
+
+### 2-5. 高精度化省略の禁止
+カテゴリ1〜10 の全項目を実装対象。部分的に実装する場合は「部分完了」と明記する。
+## 3. コマンド出力の技術仕様
+### 3-1. アンカーの取り方
+- ファイルは LF 改行、CRLF なし、BOM なし
+- アンカーに `\r\n` を含めない。必ず `` `n `` を使う
+- 変更前に `$t.Contains($anchor)` で存在確認
+- 置換は `$t.Replace($old,$new)` → `[System.IO.File]::WriteAllText($f,$t)`
+- 検証: `$crlf=([regex]::Matches($t,"`r`n")).Count; $lf=([regex]::Matches($t,"(?<!`r)`n")).Count` → CRLF=0
+
+### 3-2. マーカー方式（大きな挿入を安全に分割）
+- 挿入先に `    //@XYZ_START@` マーカーを最初に置く
+- 各ブロックは `$t.Replace($m, $m + "`n" + $b)` で挿入
+- 最後に `$t.Replace("    //@XYZ_START@`n","")` でマーカー削除
+- 残存確認: `$t.Contains("//@XYZ_START@")` が False
+
+### 3-3. ヒアストリングと日本語
+- `@'...'@`（単一引用符）で変数展開回避
+- 中に `@'` を含めない
+- 日本語ヒアストリング混在はターミナルクラッシュ要因 → 混在時は特に短く分割
+- 落ちた場合 `chcp 65001` を先に実行
+
+### 3-4. 検証パターン
+- 関数存在: `$t.Contains("bool doXxx(")` / `$t.Contains("void doXxx(")`
+- クラス数: `([regex]::Matches($t, 'class X \{')).Count` が 1
+- dispatch: コマンド名をループで `$t.Contains('eqIC(cmd, "'+$c+'")')`
+- マーカー: `$t.Contains("//@XYZ_START@")` が False
+## 4. カテゴリ完了状況（全10カテゴリ）
+### カテゴリ1: 入力・評価エンジン (5/5)
+| # | 機能 | 状態 |
+|---|---|---|
+| 1-1 | ユーザー定義関数 | ✅ |
+| 1-2 | 変数永続化 (NVS) | ✅ |
+| 1-3 | 三項演算子・配列操作 | ✅ |
+| 1-4 | Calculator カーソル移動 | ✅ |
+| 1-5 | 履歴・自然表示（2D分数・累乗） | ✅ |
+
+### カテゴリ2: CAS 本格化 (8/8)
+| # | 機能 | コマンド | 状態 |
+|---|---|---|---|
+| 2-1 | 記号微分の一般化 | Derivative | ✅ |
+| 2-2 | 因数分解の強化 | Factor, cFactor | ✅ |
+| 2-3 | 展開の強化 | Expand | ✅ |
+| 2-4 | 三角関数の変形 | tExpand, tCollect | ✅ |
+| 2-5 | 分数ツール | propFrac, getNum, getDenom, comDenom | ✅ |
+| 2-6 | 等式の左右辺抽出 | Left, Right | ✅ |
+| 2-7 | 複素解求解 | cSolve, cZeros | ✅ |
+| 2-8 | 式変換 | toLn, toExp, toSin, toCos, toLogbase | ✅ |
+| 補 | 平方完成 | completeSquare | ✅ |
+
+### カテゴリ3: 微分方程式 (6/6)
+| # | 機能 | コマンド | 状態 |
+|---|---|---|---|
+| 3-1 | 1階 ODE 解析解 | deSolve | ✅（積分形/ky/ay+b 部分完了） |
+| 3-2 | 2階 ODE 定数係数 | deSolve2 | ✅ |
+| 3-3 | 勾配場描画 | Graph→Gradient | ✅ |
+| 3-4 | オイラー法/RK4 | RK4 | ✅ |
+| 3-5 | 位相平面 | Graph→Phase | ✅ |
+| 3-6 | 陰関数の陰微分 | ImpDiff, implicitDiff | ✅ |
+
+### カテゴリ4: 微積分深化 (7/7)
+| # | 機能 | コマンド | 状態 |
+|---|---|---|---|
+| 4-1 | 記号 Taylor 展開 | Taylor, Series | ✅ |
+| 4-2 | 一般級数展開 | Series | ✅ |
+| 4-3 | 主要項抽出 | LeadingTerm | ✅ |
+| 4-4 | 記号 接線/法線 | Tangent, Normal | ✅ |
+| 4-5 | 曲線の長さ | ArcLength | ✅ |
+| 4-6 | 記号 fMin/fMax | fMin, fMax | ✅ |
+| 4-7 | 中心差分商 | DiffQ | ✅ |
+### カテゴリ5: 数値計算 (3/3)
+| # | 機能 | 実装 | 状態 |
+|---|---|---|---|
+| 5-1 | ODE ソルバ (RK4) | RK4 | ✅ |
+| 5-2 | 最適化（Nelder-Mead / 勾配降下） | NumAnalysis→Optimize | ✅ |
+| 5-3 | 線形計画法（2段階シンプレックス） | NumAnalysis→LP | ✅ |
+
+### カテゴリ6: 線形代数 (6/6)
+| # | 機能 | 実装 | 状態 |
+|---|---|---|---|
+| 6-1 | LU 分解 | Mat::luDecomp | ✅ |
+| 6-2 | QR 分解 | Mat::qrDecomp | ✅ |
+| 6-3 | 固有多項式 charPoly | Mat::charPoly | ✅ |
+| 6-4 | 固有ベクトル eigVc | Mat::eigVec | ✅ |
+| 6-5 | Trace | Mat::trace | ✅ |
+| 6-6 | 行列累乗 A^n | Mat::matPow | ✅ |
+
+### カテゴリ7: グラフ・可視化 (8/8)
+| # | 機能 | 実装 | 状態 |
+|---|---|---|---|
+| 7-1 | 陰関数高解像度 | plotImplicit（marching squares, implCell 可変） | ✅ |
+| 7-2 | パラメータスライダー | paramSlider | ✅ |
+| 7-3 | 3D キー回転操作 | plot3D + fn+arrows | ✅ |
+| 7-4 | 媒介変数曲面 | plotParamSurface | ✅ |
+| 7-5 | 不等式領域の交差 | plotIneqIntersect | ✅ |
+| 7-6 | グラフ色/線種変更 | editColorStyle + drawLineStyled | ✅ |
+| 7-7 | 散布図への回帰重ね描き | scatter（overlay regression） | ✅ |
+| 7-8 | 関数グラフへの図形重ね | editShapes + drawShapes | ✅ |
+
+### カテゴリ8: 表計算 (2/2)
+| # | 機能 | 実装 | 状態 |
+|---|---|---|---|
+| 8-1 | 範囲関数 SUM/AVG/MIN/MAX/COUNT/PROD/IF | expandRefs | ✅ |
+| 8-2 | ソート・フィルタ | sortMenu / filterMenu | ✅ |
+### カテゴリ9: 統計深化 (5/5)
+| # | 機能 | 実装 | 状態 |
+|---|---|---|---|
+| 9-1 | Frequency List | StatCore->Freq-List Stats | OK |
+| 9-2 | Category List | StatCore->Category Freq | OK |
+| 9-3 | 回帰係数の信頼区間 | StatRegress->Linear: coef CI | OK |
+| 9-4 | 重回帰の係数CI | StatRegress->MultiReg page 3 | OK |
+| 9-5 | ブートストラップ信頼区間 | StatNonpar->Bootstrap CI | OK |
+
+### カテゴリ10: その他 (2/2)
+| # | 機能 | 実装 | 状態 |
+|---|---|---|---|
+| 10-1 | 単位付き計算（次元解析） | DimVec/Quantity/unitDimDB/doDimEval | OK |
+| 10-2 | 科学法則の自動計算 | lawCalcDB（15法則）+ lawAutoCalc | OK |
+
+## 5. 除外項目（ユーザー指示により未実装）
+- uLisp マクロ・末尾呼び出し最適化（Lisp/Maxima に任せる）
+- PublishView（教材作成）
+- Notes Application 相当
+- Page Sorter 相当
+- TI-BASIC / Lua プログラミング
+
+## 6. 主要データ構造
+
+### UserFuncBank（Part 1）
+    struct UserFunc { char name[12]; char body[64]; char param; bool active; };
+    #define USERFN_MAX 16
+    struct UserFuncBank { find/add/remove/clear; };
+    UserFuncBank gUserFns;
+
+### CasCommands（Part 10）
+    class CasCommands {
+      bool run(cmd, arg, out, outLen);   // dispatch
+      // 2-1〜2-8 + カテゴリ3/4 全コマンド
+      // 派生エンジン: DNode（記号微分ツリー 200 ノード）
+    };
+    CasCommands gCas;
+
+### DimVec（SciRef private、7次元）
+    struct DimVec {
+      int8_t d[7];    // L, M, T, I, Th, N, J
+      operator+/operator-/scale(n)/isDimless/toString
+    };
+
+### Quantity
+    struct Quantity { double v; DimVec dim; };
+
+### unitDimDB（48単位）
+    struct UnitDim { const char* name; double scale; DimVec dim; };
+    例: {"km",1000,{1,0,0}}, {"N",1,{1,1,-2}}, {"J",1,{2,1,-2}}
+
+### lawCalcDB（15法則）
+    struct LawCalc { const char* name; const char* v; const char* f[4]; };
+    例: {"Newton 2nd: F = m*a", "Fma", {"m*a", "F/a", "F/m", ""}}
+    v は対象変数文字列、f[i] は v[i] を解く式。
+## 7. CasCommands dispatch 一覧（34コマンド）
+
+カテゴリ2: Factor, cFactor, Expand, completeSquare, tExpand, tCollect,
+getNum, getDenom, propFrac, comDenom, Left, Right, cSolve, cZeros,
+toLn, toExp, toSin, toCos, toLogbase, Derivative
+
+カテゴリ3: deSolve, deSolve2, RK4, ImpDiff, implicitDiff
+
+カテゴリ4: Taylor, Series, LeadingTerm, Tangent, Normal, ArcLength,
+fMin, fMax, DiffQ
+
+呼出形式: 電卓入力で Cmd(arg) を実行。tryCasCommand が CmdName(...) を検出して gCas.run に振り分ける。
+呼出順序: tryAssignOrFunc -> tryCasCommand -> 通常 eval
+
+## 8. NVS キー
+| キー | 型 | 内容 |
+|---|---|---|
+| angle | int | 角度モード (DEG/RAD/GRAD) |
+| disp | int | 表示モード (NORM/FIX/SCI/ENG) |
+| digits | int | 表示桁数 (0-9) |
+| norm | int | Norm 1/2 閾値 |
+| rpn | bool | RPN モード |
+| frac | bool | 分数表示 |
+| wifissid | String | SSID |
+| wifipass | String | Password |
+| userfns | String | ユーザー関数（name\tparam\tbody\n 連結） |
+
+保存周期: loop() 内で 60秒ごとに gNVS.save()。設定画面からは明示保存可能。
+
+## 9. SD ファイル
+| パス | 形式 | 用途 |
+|---|---|---|
+| /userfns.txt | name<TAB>param<TAB>body\n | ユーザー関数 |
+| /data.csv, /stat.csv | CSV | 統計入出力 |
+| /sheet.csv | CSV | Spreadsheet |
+| /script.lsp | Lisp | uLisp スクリプト |
+| /*.bmp | BMP (24bit) | スクリーンショット |
+## 10. ハードウェア制約と対策
+
+### 10-1. 画面 (240x135, Font0=6x8px)
+- 行間 11px を基本、履歴・上付き累乗は 13px に拡張
+- 上付き累乗は y-3 で描画（y-4 は前行と重なる）
+- drawNatural / drawFrac2D は境界チェック（LCD_W-4）必須
+- メニュー行高 13px、本文行高 11px
+
+### 10-2. PSRAM なし (RAM 320KB)
+- 大きな配列は global static（heap に置かない）
+- ExprEval::Subst は 4要素程度に抑える
+- String は短命、長寿命は char[] にコピー
+- stat[] は ps_malloc フォールバック（PSRAM なし時は malloc）
+
+### 10-3. キーボード
+- `;` `.` `,` `/` は方向キー扱い（fn 併用）
+- `<` `>` は shift+, / shift+. でカーソル移動
+- ESC = バッククォート
+- fn+数字 = メニューショートカット
+
+### 10-4. 行間と文字列長
+- メニュー項目は 26 文字以内（240px / 6 - インデント）
+- 長い式は drawWrapped（最大 38 文字/行）を使う
+
+## 11. 既知の制限（部分完了項目）
+
+- 3-1 deSolve: 一般形（1階線形 y'=P(x)y+Q(x)）を追加。変数分離形/同次形/完全微分は未実装のまま。
+- 4-6 fMin/fMax: 大域グリッドサーチ（1000点）+ 黄金分割局所改良を追加。大域最適の厳密保証は無し。
+- 6-4 eigVec: 複素固有値対応（実2n系逆反復、eigVecC）。vR/vI を分離表示。
+- 5-2 勾配降下: 未収束（maxIter 到達）時は Nelder-Mead でフォールバック。
+- 9-5 Bootstrap: BCa 法を追加（percentile / BCa をメニュー選択）。
+- 10-1 次元解析: SI 接頭辞 19 種（YZEPTGMkhdcmunpfazy）+ da 対応。
+## 12. 過去の違反記録（再発防止）
+| 違反 | 内容 | 対策 |
+|---|---|---|
+| コンパイル指示違反 | パッチ後に Ctrl+R を書いた | パッチのみで完結 |
+| 結果要求違反 | 「結果を貼ってください」を書いた | 提案のみ |
+| 動作確認違反 | パッチ直後に動作例を列挙 | パッチに含めない |
+| 次のステップ違反 | パッチ直後に「次は…」と書いた | 指示があってから |
+| CRLF 前提アンカー違反 | CRLF 前提アンカーで全滅 | LF のみ使用 |
+| 勝手な機能拡張 | 指示なく 2-2 パッチを出した | 指示された項目のみ |
+| タイトル無しコマンド | 説明なしでコマンドを並べた | # [N/M] 必須 |
+| 分割行 if/elseif/else | 1コマンド内で複数行分割 | 1コマンド1行完結 |
+| コードフェンス混入 | ヒアストリング内に三連バックティック | 使用禁止 |
+| バッククォート ヒアストリング混入 | notify 修正でバッククォートを直接含め PowerShell 強制終了 | [regex]::Unescape('\u0060') で生成 |
+| exit 誤発動 | 検索文字列不一致で exit が発動しシェル終了 | exit 全廃、if-else で状態出力 |
+| 検証文字列のみ記載 | 検証文字列をパッチ本体に入れ忘れ不一致 | パッチと検証を同時に書く |
+
+## 13. 再開時の正しい行動手順
+1. ユーザー発言を待つ（こちらから提案しない）
+2. 「待て」-> 完全沈黙
+3. 「整理しろ」-> 表のみ、コード無し
+4. 「コンパイルしろ」-> その時だけコンパイル方法提示
+5. 「機能実装」-> パッチを 4 個以内で段階提示
+6. 「結果は？」-> 検証コマンドを 1 個だけ出す
+
+## 14. 直近のバックアップ
+| ファイル | 内容 |
+|---|---|
+| pomas_0_92.ino.bak_userfn1〜3b | ユーザー関数系 |
+| pomas_0_92.ino.bak_nvs | NVS 永続化 |
+| pomas_0_92.ino.bak_ternary | 三項演算子 |
+| pomas_0_92.ino.bak_array | 配列リテラル |
+| pomas_0_92.ino.bak_sdfn | SD 入出力 |
+| pomas_0_92.ino.bak_cursor | カーソル移動 |
+| pomas_0_92.ino.bak_cas1, cas2 | CasCommands |
+| pomas_0_92.ino.bak_deriv1 | 2-1 記号微分着手前 |
+| pomas_0_92.ino.bak_uiux | UI/UX 修正前 (Claude.ai 版) |
+| pomas_0_92.ino.bak_c3 | C3 修正着手前 |
+| pomas_0_92.ino.bak_keyswap | キーアサイン修正着手前 |
+| pomas_0_92.ino.bak_esc | ESC 階層統一着手前 |
+
+## 15. 完了確認コマンド（再検証用）
+以下のコマンドを PowerShell に貼ると全 dispatch とマーカー残存を確認できる。
+
+    $f = "C:\Users\YNGMT\Documents\Arduino\pomas_0_92\pomas_0_92.ino"
+    $t = [System.IO.File]::ReadAllText($f)
+    $cmds = @("Factor","Expand","completeSquare","Derivative","cFactor","tExpand","tCollect","getNum","getDenom","propFrac","comDenom","Left","Right","cSolve","cZeros","toLn","toExp","toSin","toCos","toLogbase","deSolve","deSolve2","RK4","ImpDiff","implicitDiff","Taylor","Tangent","Normal","ArcLength","fMin","fMax","DiffQ","Series","LeadingTerm")
+    $hit=0; $miss=@(); foreach ($c in $cmds) { if ($t.Contains('eqIC(cmd, "'+$c+'")')) {$hit++} else {$miss+=$c} }
+    Write-Host ("dispatch: $hit / "+$cmds.Count); Write-Host ("missing: "+($miss -join ','))
+    Write-Host ("CasCommands: "+([regex]::Matches($t,'class CasCommands \{')).Count)
+    Write-Host ("SciRef:      "+([regex]::Matches($t,'class SciRef \{')).Count)
+    Write-Host ("markers: " + ($t -match '//@[A-Z0-9_]+_START@'))
+    $crlf=([regex]::Matches($t,"`r`n")).Count; $lf=([regex]::Matches($t,"(?<!`r)`n")).Count
+    Write-Host ("CRLF=$crlf LF=$lf")
+
+期待結果:
+- dispatch: 34 / 34
+- missing: (空)
+- CasCommands: 1 / SciRef: 1
+- markers: False
+- CRLF=0
+
+## 16. 引き継ぎ時の最後の指示
+1. 本ファイルと pomas_0_92.ino を新セッションへ引き渡す
+2. 新セッションでは本ファイル §2（絶対厳守ルール）を最初に読み込ませる
+3. 実機コンパイル確認はユーザー指示があってから
+4. 追加実装が必要な場合は、まず本ファイル §4 の完了状況を再確認してから着手
+5. 本ファイルは UTF-8 LF で保存されている。PowerShell で確認する際は Get-Content -Encoding UTF8 を使う
+
+以上。全10カテゴリ 53項目超 完了。
+## 17. 他プロジェクトとの比較（2026-10 時点）
+
+### 17-1. 比較対象プロジェクト
+| プロジェクト | URL | 位置づけ |
+|---|---|---|
+| xcalc_cardputer | github.com/sourcels/xcalc_cardputer | 特化型CAS（ドイツ教育課程の曲線解析 Kurvendiskussion） |
+| PicoRuby Calculator | github.com/engneer-hamachan/picoruby-calculator | プログラミング環境（Ruby REPL、テーマ切替） |
+| CalcPuter | github.com/AdvaScript/CalcPuter | 高機能関数電卓（12公式、分数入力） |
+| UcPlayground | github.com/tabozen/UcPlayground | 実験ビルド集（個別完成品ではない） |
+| Zenn記事 | zenn.dev/akiraindustry/articles/3bc0fd2bf72527 | 入門記事（ほぼ動画リンクのみ） |
+| PoMaS旧版 | jpeqtx.github.io/PoMaS/ | 本プロジェクト v0.92 初公開時点の説明ページ |
+
+### 17-2. 機能別比較（PoMaS = 全完了版）
+| 領域 | PoMaS | xcalc | PicoRuby | CalcPuter |
+|---|---|---|---|---|
+| CAS | 34コマンド（微分/因数分解/展開/三角/分数/Left-Right/複素解/式変換/Taylor/接線/曲線長/fMin/fMax/DiffQ） | 曲線解析特化 11機能 | なし | なし |
+| 微分方程式 | 6項目（1階/2階ODE/RK4/勾配場/位相平面/陰微分） | なし | なし | なし |
+| 数値計算 | 3項目（Nelder-Mead/勾配降下/2段階LP） | なし | なし | なし |
+| 線形代数 | 6項目（LU/QR/charPoly/eigVec/trace/A^n） | なし | なし | なし |
+| 統計 | 記述/回帰9種/検定11種/ノンパラ/多変量/層別/生存/メタ/Bootstrap | なし | なし | なし |
+| グラフ | 8項目（marching squares/スライダー/3D回転/媒介変数曲面/不等式交差/色線種/回帰重ね/図形重ね） | 基本プロットのみ | なし | なし |
+| 医学計算 | 10領域（PK/OB/内分泌/電解質/腎/体格/スコア/血液/呼吸/循環） | なし | なし | なし |
+| 表計算 | 45x26 + 範囲関数 + ソート/フィルタ | なし | なし | なし |
+| SciRef | 定数386/法則300/単位532/周期表118/次元解析48/法則計算15 | なし | なし | なし |
+| 言語環境 | uLisp（GC付き） | なし | Ruby REPL | なし |
+| 永続化 | NVS + SD（ユーザー関数/CSV/スクリプト/BMP） | 限定的 | ファイルI/O | 限定的 |
+
+### 17-3. 個別評価
+- xcalc: ドイツ教育課程の Kurvendiskussion（交点/極値/変曲点/対称性/単調性/極限の自動解析）に特化。スプライトバッファリングで描画が滑らか。教育用途では PoMaS を上回るが、汎用数学・統計・数値計算は非搭載。
+- PicoRuby Calculator: Ruby REPL によるプログラミング学習に最適。テーマ切替（Sakura/Cyber Retro/Editor）で見た目が良い。数値計算ライブラリは PoMaS が圧倒。Cardputer ADV 対応済み。
+- CalcPuter: 数式評価 + 12公式 + 分数入力モード + Fnキーショートカット。関数電卓としての完成度は高い。README にスクリーンショット付きで実績あり。
+- UcPlayground: 個別完成品ではなく実験ビルド集のため比較対象外。
+- Zenn記事: 入門記事。機能比較対象外。
+### 17-4. PoMaS の優位性（他プロジェクトに対する）
+1. 機能の網羅性: 10カテゴリ 53項目超。他プロジェクトは単一目的（CAS特化、REPL特化、関数電卓特化）。
+2. 統合度: 電卓/CAS/統計/医学/グラフ/表計算/プログラミング/次元解析を1ファームウェアに統合。Cardputer の「持ち運べるワークステーション」コンセプトを最も体現。
+3. 実装の深さ: CAS 34コマンド、適応シンプソン積分、Richardson補外、2段階シンプレックス、PCA（Jacobi）、Varimax因子分析、Ward階層クラスタ、CART回帰木、Bootstrap CI。
+4. 他に類を見ない領域: 微分方程式、数値最適化、線形代数、医学計算、表計算範囲関数、次元解析、科学法則自動計算。
+
+### 17-5. PoMaS の劣位（他プロジェクトが上回る点）
+| 項目 | PoMaS | 優位なプロジェクト |
+|---|---|---|
+| 教育カリキュラム特化 | 汎用設計で Kurvendiskussion 自動解析なし | xcalc |
+| プログラミング学習 | uLisp（Lisp 使用者は限定的） | PicoRuby（Ruby REPL） |
+| 単機能完成度 | 機能多数のため1つ1つの磨き込みは中程度 | CalcPuter（関数電卓として高完成度） |
+| 描画の滑らかさ | 直接描画（スプライトなし） | xcalc（スプライトバッファリング） |
+| UI テーマ | Paper UI v2 の1種のみ | PicoRuby（3テーマ切替） |
+
+### 17-6. 総合評価（5段階）
+| 観点 | PoMaS | 最高の他プロジェクト |
+|---|---|---|
+| 機能の広さ | 5 | xcalc/PicoRuby/CalcPuter: 3 |
+| 統合度 | 5 | 他は単一目的で 2 |
+| CASの深さ | 5（34コマンド） | xcalc: 4（曲線解析特化） |
+| 統計・数値計算 | 5 | 他はほぼ皆無で 1 |
+| グラフ | 5 | xcalc: 3（基本プロット） |
+| ドキュメント | 2（引き継ぎ書のみ） | xcalc/PicoRuby/CalcPuter: 4 |
+| 実績・信頼性 | 2（実機未検証） | 他はリリース済みで 4 |
+| UI/UX | 3 | xcalc/PicoRuby: 4 |
+| 特定用途の完成度 | 3（汎用とのトレードオフ） | xcalc/PicoRuby/CalcPuter: 5 |
+
+### 17-7. 旧版（v0.92初公開時点）との差分
+旧版ページ（jpeqtx.github.io/PoMaS/）の記載:
+- CAS: 多項式中心（評価/微分/積分/加減乗/根/テイラー/極限/置換）
+- 統計: 回帰9種/検定11種/ノンパラ/リスク/分布/多変量/層別/生存/メタ/17グラフ
+- SciRef: 定数386/法則300/単位532/周期表118
+- Graph: y=f(x)/パラメトリック/極座標/陰関数/不等式/数列/3D/Trace/Zoom/G-Solve
+- Tools: スプレッドシート45x26/uLisp/Wi-Fi/Maxima/NVS
+
+全完了版で追加された領域:
+- CAS 34コマンドへ拡張（記号微分一般化、cFactor、tExpand/tCollect、分数ツール、Left/Right、cSolve/cZeros、式変換、Taylor/Series/LeadingTerm、接線/法線、曲線長、fMin/fMax、DiffQ）
+- 微分方程式 6項目（新規）
+- 数値計算 3項目（新規）
+- 線形代数 6項目（新規）
+- グラフ 8項目追加（marching squares/スライダー/3D回転/媒介変数曲面/不等式交差/色線種/回帰重ね/図形重ね）
+- 表計算（範囲関数/ソート/フィルタ追加）
+- 統計（Frequency/Category/回帰CI/重回帰CI/Bootstrap追加）
+- SciRef（次元解析48単位/科学法則計算15法則追加）
+
+結論: 旧版時点で「網羅性と統合度」で優位だった PoMaS は、全完了版で CAS/微分方程式/数値計算/線形代数/グラフ/表計算/次元解析の各領域を大幅強化し、他プロジェクトに対する優位性が決定的になった。
+## 18. マニュアル整備の課題（最重要未解決事項）
+
+### 18-1. 現状
+| 項目 | 状態 |
+|---|---|
+| 引き継ぎ書（本ファイル） | 325行 → 本章追加で 380行超。技術仕様のみで操作マニュアルではない |
+| ユーザー向け README | なし |
+| 操作マニュアル（全17章の公開版） | 旧版ページ（jpeqtx.github.io/PoMaS/）に記載があるが、全完了版には未反映 |
+| スクリーンショット | 旧版ページに掲載あり、全完了版には未撮影 |
+| ビルド手順 | 引き継ぎ書 §1 に FQBN 記載のみ。PlatformIO 設定なし |
+| 動作実績 | 実機コンパイル未確認（コード検証のみ） |
+
+### 18-2. 他プロジェクトとの比較（ドキュメント面）
+| プロジェクト | README | ビルド手順 | スクショ | 動作実績 |
+|---|---|---|---|---|
+| PoMaS | なし | FQBNのみ | 旧版のみ | 未確認 |
+| xcalc | 充実 | PlatformIO | あり | あり |
+| PicoRuby | 充実 | 詳細 | あり | あり |
+| CalcPuter | あり | あり | あり | リリース済み |
+
+### 18-3. 整備すべき項目（優先順）
+1. README.md 作成: プロジェクト概要、モード一覧、ビルド手順（FQBN 明記）、スクリーンショット
+2. 操作マニュアル全17章の全完了版対応: 旧版ページの内容を全完了版の 53項目超に拡張
+3. ビルド手順の明確化: Arduino IDE 手順 + PlatformIO.ini テンプレート
+4. スクリーンショット撮影: 各モードの代表画面（Calculator/CAS/Stat/SciRef/Graph/Tools/Medical）
+5. 実機コンパイル・動作検証: 全 34 CasCommands dispatch と全 10 カテゴリの動作確認
+6. 動作デモ動画: xcalc/PicoRuby に対抗するため、YouTube 等で公開
+7. GitHub リポジトリ公開: コード + マニュアル + スクショ + ビルド手順のセット
+
+### 18-4. マニュアル整備が完了した時点での期待効果
+- 機能の広さ・統合度・実装の深さで他プロジェクトを圧倒している PoMaS が、ドキュメント面でも他プロジェクトと同等以上になる
+- 「Cardputer 最強の統合数学ツール」としての地位を確立
+- ユーザーが迷わずビルド・使用できるため、実績・信頼性の項目も向上
+
+## 19. 最終更新情報
+| 項目 | 内容 |
+|---|---|
+| 最終更新日 | 2026-10-27 |
+| 章構成 | §1〜§20（全20章） |
+| 完了カテゴリ | 全10カテゴリ 53項目超 + 部分完了6項目解消 |
+| 行数 | 16,007 |
+| dispatch | 34 / 34（CasCommands） |
+| クラス数 | CasCommands:1, SciRef:1, GraphEngine:1, Spreadsheet:1, StatRegress:1 |
+| マーカー残存 | なし |
+| 改行 | LF（CRLF=0）、BOM なし |
+| 未解決最重要課題 | マニュアル整備（§18）、実機コンパイル検証 |
+
+## 20. UI/UX 修正（2026-10-27 完了）
+
+### 20-1. 修正対象イベント
+Claude.ai による UI/UX 修正版を起点に、以下を追加実施。
+- C3: notify 中のキー押下で holdT/repT が古いままになり、直後の pollKeys で fn+矢印リピート誤発火
+- B1/B2 は Claude.ai 版で既に修正済（StatCore ガード s==13、StatRegress ガード s==12、menuMemo 128件）
+- B3 は Claude.ai 版で既に修正済（keys[128]/vals[128]）
+- 残作業として §11 部分完了 6 項目 + キーアサイン + ESC 階層を追加修正
+
+### 20-2. C3 修正（キーリピート誤発火）
+実装:
+- DisplayMgr に静的メンバ `_holdT`, `_repT` 追加
+- public メソッド `resetKeyRepeat() { _holdT = _repT = millis(); }` 追加
+- pollKeys 内の local static `holdT`, `repT` を削除し `_holdT`/`_repT` に置換
+- notify() のキースキップ break 直前に `resetKeyRepeat()` 呼出
+- DisplayMgr 静的メンバ定義を DM インスタンス前に追加
+検証済: 7点 True、CRLF=0
+
+### 20-3. §11 部分完了 6 項目解消
+- 10-1 SI 接頭辞: findUnitAt を 3 引数化（ulen, prefixScale）。19 種（YZEPTGMkhdcmunpfazy）+ da 対応。dParseAtom で unitScale に prefixScale 乗算。
+- 4-6 fMin/fMax 大域化: GN=1000 グリッドサーチ後に黄金分割 80 反復で局所改良。大域採用は既存 bestY より優れた場合のみ。
+- 6-4 eigVec 複素: Mat::eigVecC 追加（実2n系逆反復）。matOpsLA で複素固有値時は vR / vI の 2 画面表示。
+- 5-2 勾配降下フォールバック: NumMenu::optimizeMenu で it>=2999 時に Nelder-Mead 追撃、fb2<fb の場合のみ採用。
+- 3-1 deSolve 一般形: 1階線形 y'=P(x)y+Q(x) を y=0,1,2 の 3 点で数値線形性判定。pC/qC 定数分支、pC 変数分支、一般解文字列の 3 段。
+- 9-5 Bootstrap BCa: Percentile / BCa のメニュー選択。BCa は z0（point 未満比率）+ a（jackknife 加速度）で q_lo/q_hi を導出し分位点取得。
+
+### 20-4. キーアサイン修正（- と _ のスワップ）
+物理キーキャップは上段 `-`、下段 `_`。Cardputer ファームウェア標準は Aa なし=`-` / Aa あり=`_`。PoMaS 実機で Aa なし=`_` / Aa あり=`-` と逆転していたため、PoMaS 側でスワップ。
+実装（全 3 経路）:
+- CalculatorCore::run の st.word 格納前
+- DisplayMgr::inputLine の st.word 格納前
+- ULispMode::repl の st.word 格納前
+共通ロジック: `char cc = (c == '_') ? '-' : ((c == '-') ? '_' : c);`
+検証済: swap_count=3、旧経路 0
+
+### 20-5. ESC 階層統一
+旧実装は `st.fn && IS_ESC` と `IS_ESC` が混在し、fn+ESC 時に menu が -1 を返すと for(;;) のない run() では一気に上位へ return していた。
+実装:
+- `st.fn && IS_ESC` → `IS_ESC` に全置換（56 箇所）
+- EqSolver / MetaAnalysis / StatGraphs の run() に for(;;) 追加
+- PrimeFactor を「Factorize / Back」メニュー化（run 冒頭 for(;;) + メニュー、末尾 close 追加）
+結果: 全操作系で ESC = 直前階層へ戻る。notify 表示も ESC 押下 or タイムアウトで消える。
+
+### 20-6. notify スキップ条件の ESC 限定
+旧: `isChange() && isPressed()` で任意キーにより notify が消える（数秒立たず消える原因）。
+新: `isChange() && isKeyPressed('`')` のみ。他キー入力・チャタリングでは消えない。ms 経過の自動消去は維持。
+注意: パッチ適用時、ヒアストリング内に直接バッククォートを書くと PowerShell が強制終了する。[char]96 も不安定。[regex]::Unescape('\u0060') で生成するのが安定。
+
+### 20-7. 検証結果一覧（2026-10-27）
+| 検証 | 結果 |
+|---|---|
+| C3 修正 7 点 | 全 True |
+| SI 接頭辞 + fMin/fMax 大域 7 点 | 全 True |
+| eigVec 複素 + 勾配降下フォールバック 7 点 | 全 True |
+| deSolve 一般形 + BCa 検証（補正後） | 全 True |
+| -/_ スワップ 8 点 | 全 True |
+| ESC 階層統一 8 点 | 全 True（old_fn_esc=0, esc_refs=56） |
+| PrimeFactor メニュー化 + notify ESC 限定 6 点 | 全 True |
+| IS_ESC 定義確認 | is_esc_def=True, quote/tilde 使用 0 |
+| CRLF | 0（全パッチ後） |
+| 最終 LF 行数 | 16,007 |
+
+### 20-8. 明日（2026-10-28）の作業予定
+1. 実機コンパイル: FQBN m5stack:esp32:m5stack_cardputer:FlashSize=8M,PartitionScheme=huge_app
+2. フラッシュ・起動確認
+3. 全 34 dispatch の CasCommands 動作確認（§15 完了確認コマンド + 実機で Cmd(arg) 実行）
+4. 全 10 カテゴリの動作確認（§4 各項目）
+5. UI/UX 修正確認: ESC 階層戻り、notify ESC 消去、-/_ スワップ、PrimeFactor メニュー
+6. 部分完了 6 項目の実機確認（deSolve 一般形 / fMin-fMax 大域 / eigVec 複素 / 勾配降下フォールバック / BCa / SI 接頭辞）
+7. 不具合発生時は本ファイル §2 ルール遵守でパッチ提示
+
+### 20-9. キー仕様の確定（2026-10-27 ユーザー確認済み）
+混乱回避のためキーは表示通りで運用する。
+| キー | 動作 |
+|---|---|
+| `-` / `_` | 表示通り（Aa なし＝`_`、Aa あり＝`-`）。PoMaS 側でスワップ実装済 |
+| `'` / `~` / `` ` `` | 同一物理キーの fn レイヤー。ESC は `` ` `` レイヤーのみ |
+| ESC | `` ` `` キー単独のみ。`'` と `~` は ESC 扱いしない |
+| uLisp の `'` | 数学系モードでは不要だが、uLisp REPL では quote 省略記法として必要。スワップ対象外のため維持 |
+以上。2026-10-27 時点でコード系修正は完了。明日の実機コンパイル・全カテゴリ動作検証の結果を本ファイル §20 に追記すること。新セッションでは §2（絶対厳守ルール）を最初に読み込み、§4（カテゴリ完了状況）・§17（他プロジェクト比較）・§18（マニュアル整備）・§20（本日修正）を踏まえて作業を継続すること。

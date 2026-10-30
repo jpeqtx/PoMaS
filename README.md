@@ -1,301 +1,231 @@
 # PoMaS — Pocket Mathematics Station
 
-🌐 **Web サイト**: [https://jpeqtx.github.io/PoMaS/](https://jpeqtx.github.io/PoMaS/)
+[![Version](https://img.shields.io/badge/version-0.92-2a5c3a)](https://github.com/jpeqtx/PoMaS/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-M5Stack%20Cardputer--Adv-1a5c9a)](https://m5stack.com/)
+[![License](https://img.shields.io/badge/license-MIT-2a5c3a)](LICENSE)
+[![Docs](https://img.shields.io/badge/manual-24%20chapters-7ab88a)](https://jpeqtx.github.io/PoMaS/)
 
-**M5Stack Cardputer-Adv 向けのポケット数学ステーション**
+M5Stack Cardputer-Adv 上で動作する多機能数学ステーション。
+電卓・CAS・統計解析・医学計算・グラフ描画・科学資料検索・表計算・uLisp インタプリタを 1 ファームウェアに統合しました。
 
-PoMaS は、M5Stack Cardputer-Adv (ESP32-S3) 上で動作する多機能関数電卓です。
-数式計算から統計解析、グラフ描画、μLisp インタプリタまで、数学・科学の作業を
-1 台で完結させることを目指しています。
+## スクリーンショット
 
-> 🌐 **Non-Japanese readers**: this README and [MANUAL.md](docs/manual/index.md) can be
-> read using your browser's translation feature.
-> A print-friendly PDF is available from the [Releases](https://github.com/jpeqtx/PoMaS/releases) page.
+```
+┌─────────────────────────────────┐
+│▌PoMaS 0.92          DEG|NRM     │
+├─────────────────────────────────┤
+│1 Calculator                     │
+│2 CAS                            │
+│3 Statistics                     │
+│4 Medical Calculator             │
+│5 Scientific Reference           │
+│6 Graph                          │
+│7 Tools (Sheet/uLisp/WiFi)       │
+│8 About                          │
+├─────────────────────────────────┤
+│ENT:OK                ESC:back   │
+└─────────────────────────────────┘
+```
 
-> 🌐 **日本語で読む方へ**: 詳細な操作マニュアルは [docs/manual/index.md](docs/manual/index.md) を参照してください。
-> 中学生でも読める AtoZ ガイドとして、全 17 章構成で執筆中です。
+## 主な機能
 
----
+### 1. Calculator（電卓）
 
-## ✨ 主な機能
+- 四則演算・べき乗・階乗・剰余
+- 三角関数・双曲線関数・指数・対数・累乗根・組合せ・順列・素数判定・乱数
+- 履歴 100 件・メモリ M・変数 A〜J・Ans バンク（最大 20 件）
+- 複素数（四則・極形式・累乗・exp/sin/cos/log）
+- 基数変換（10/16/8/2 進数）・ビット演算（AND/OR/XOR/NOT/SHL/SHR）
+- RPN モード
+- 拡張ツール（方程式・数値解析・ベクトル/行列・幾何 27 図形・確率シミュレーション・素因数分解）
 
-| モード | 内容 |
-|---|---|
-| **Calculator** | 数式計算、履歴、メモリ、変数 A〜J、Ans バンク、複素数、基数変換、ビット演算、RPN |
-| **CAS** | 多項式の評価・微分・積分・加減乗算・根、数値テイラー展開、極限、記号置換 |
-| **Statistics** | 記述統計、回帰 9 種、仮説検定 11 種、ノンパラメトリック、リスク比、分布ブラウザ、多変量解析、層別解析、生存分析、メタアナリシス、統計グラフ 17 種、CSV ストリーム統計 |
-| **SciRef** | 科学定数 386 件、科学法則 300 件、単位換算 532 単位、周期表 118 元素 |
-| **Graph** | y=f(x)、パラメトリック、極座標、陰関数、不等式、数列、3D ワイヤフレーム、Trace、Zoom、G-Solve |
-| **Tools** | スプレッドシート 45×26、μLisp インタプリタ、Wi-Fi / Maxima 連携（⚠️ サーバーは各自用意）、電源情報、設定（NVS 永続化） |
+### 2. CAS（数式処理）
 
----
+- 多項式の評価・微分・積分・加減乗算
+- 根の計算（複素数対応、Durand-Kerner）
+- テイラー展開（任意関数、次数 1〜7）
+- 極限（数値的）
+- 記号置換
 
-## 🚀 クイックスタート
+### 3. Statistics（統計）
+
+- 記述統計・特殊平均（重み付き/幾何/調和/トリム）
+- 回帰 9 種・重回帰・ステップワイズ
+- 検定 11 種（z/t/F/ANOVA/χ²/Fisher）
+- ノンパラメトリック 7 種
+- リスク指標（OR/RR/RD/NNT/CI）
+- 確率分布 7 種（正規/t/χ²/F/二項/ポアソン/幾何）
+- 多変量解析（PCA/因子分析/k-means/階層クラスタ/決定木）
+- 層別解析（Mantel-Haenszel/Breslow-Day/Cochran's Q）
+- 生存分析（KM/Log-rank/Cox PH）
+- メタアナリシス（IV/DL/Forest/Funnel/Egger）
+- 統計グラフ 17 種
+- CSV ストリーム統計
+
+### 4. Medical Calculator（医学計算）
+
+10 領域・40 関数以上:
+
+- **Cardiology**: MAP・Pulse Pressure・RPP・Shock Index
+- **Pulmonology**: P/F ratio・A-a gradient・Oxygenation Index
+- **Hematology**: ANC・MCV/MCH/MCHC・Mentzer index
+- **Clinical Scores**: GCS・CURB-65・qSOFA・Child-Pugh・MELD
+- **Body Composition**: BMI・BSA（Mosteller/DuBois）・IBW（Devine）・ABW
+- **Renal**: CKD-EPI 2021・Cockcroft-Gault・Schwartz
+- **Lytes/Acid-Base**: Corrected Ca/Na・Anion gap・Osmolality・Winter's formula・Delta gap・Free water deficit
+- **Endocrine**: HOMA-IR・Free T4 index
+- **Obstetrics**: Naegele（EDD）・Gestational age
+- **Pharmacokinetics**: Half-life・Loading dose・Maintenance dose・Dose by weight
+
+疫学メニュー: 生存分析・メタアナリシス・食中毒原因追跡・リスク/オッズ比・信頼区間。
+
+### 5. SciRef（科学資料）
+
+- 科学定数 386 件（11 カテゴリ）
+- 科学法則 300 件（7 カテゴリ）
+- 単位換算 532 単位（20 カテゴリ）
+- 周期表 118 元素
+- 記号/名前検索
+
+### 6. Graph（グラフ）
+
+- y=f(x)・パラメトリック・極座標・陰関数・不等式・数列・3D
+- Trace（カーソル読み取り）
+- Zoom（Z/X/R/B）・Square aspect (1:1)
+- G-Solve（根・極値・交点・定積分）
+- Tangent / Normal（接線・法線）
+- BMP 保存
+
+### 7. Tools（ツール）
+
+- スプレッドシート 45×26（CSV I/O・Sheet↔L1..L8 変換）
+- uLisp インタプリタ（GC 付き・REPL・スクリプト実行）
+- Wi-Fi 接続・Maxima 連携（クライアント側）
+- Power / About（バッテリー・SD 情報）
+- Settings（NVS 永続化）
+- Auto power off（分単位設定、NVS 保存）
+
+## インストール
 
 ### 必要なもの
 
-- **M5Stack Cardputer-Adv** (ESP32-S3FN8, 8MB Flash)
+- M5Stack Cardputer-Adv（ESP32-S3FN8, 8MB Flash）
 - USB-C ケーブル
 - PC（書き込み用）
+- microSD カード（任意）
 
-### ファームウェア書き込み
+### 方法 1: M5Stack Launcher（マルチブート対応・推奨）
 
-1. [esptool](https://github.com/espressif/esptool) をインストール
-2. [Releases](https://github.com/jpeqtx/PoMaS/releases) から `PoMaS_v0.92_Cardputer-Adv.bin` をダウンロード
-3. Cardputer-Adv を USB 接続
-4. 以下のコマンドを実行：
-
-```bash
-esptool.py --chip esp32s3 --port COM3 --baud 921600 \
-  write_flash --flash_mode dio --flash_freq 80m --flash_size 8MB \
-  0x0 PoMaS_v0.92_Cardputer-Adv.bin
-```
-
-`COM3` は環境に合わせて変更してください。
-
-
-### M5Stack Launcher を使ったインストール（マルチブート対応）
-
-サードパーティ製の **M5Stack Launcher** を一度書き込んでおくと、以降は`.bin`ファイルをSDカードに入れるだけで、PoMaSを含む複数のファームウェアを切り替えて使えるようになります。
-
-1. [Launcher Releases](https://github.com/bmorcelli/Launcher/releases) から `Launcher-Cardputer.bin` をダウンロード
+1. [Launcher Releases](https://github.com/bmorcelli/Launcher/releases) から Launcher-Cardputer.bin をダウンロード
 2. M5Burner または esptool で Launcher を書き込み
-3. PoMaSの`.bin`ファイル（`pomas_0_92.ino.bin` または `pomas_0_92.ino.merged.bin`）をSDカードのルートにコピー
-4. Cardputerの電源を入れ、Launcher起動画面で `Enter` を押してLauncherを起動
-5. SDカード内の`.bin`ファイルを選択してインストール
+3. PoMaS の .bin を SD カードのルートにコピー
+4. 電源 ON → Enter で Launcher 起動 → PoMaS を選択
 
-インストール後は、起動時に何も押さなければ最後にインストールしたファームウェアが自動起動します。Launcherに戻りたいときは、起動時に `Enter` を押してください。
+### 方法 2: esptool で直接書き込み
 
+```
+esptool.py --chip esp32s3 --port COM3 --baud 921600 write_flash --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 pomas_0_92.ino.bin
+```
 
-### 基本操作
+COM3 は環境に合わせて変更してください。
 
-| キー | 動作 |
+### 方法 3: 統合 .bin（オフセット 0x0 書き込み）
+
+```
+esptool.py --chip esp32s3 --port COM3 --baud 921600 write_flash --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 pomas_0_92.ino.merged.bin
+```
+
+merged.bin は 8MB 全領域を含むため、初回書き込みや復旧時に便利。
+
+## マニュアル
+
+全 24 章の取扱説明書: [https://jpeqtx.github.io/PoMaS/](https://jpeqtx.github.io/PoMaS/)
+
+| 部 | 章 |
 |---|---|
-| `Fn + Esc`（バッククォート） | 戻る / キャンセル |
-| `Enter` | 決定 / 実行 |
-| `Del` | バックスペース |
-| `Fn + 数字` | 各モードのショートカット |
-| `;` / `.` | 上下移動 |
-| `,` / `/` | 左右移動 |
+| I はじめに | 1〜3 |
+| II キーボード | 4 |
+| III Calculator | 5〜6 |
+| IV CAS | 7 |
+| V Statistics | 8〜9 |
+| VI Graph | 10 |
+| VII SciRef | 11 |
+| VIII Tools | 12 |
+| IX 設定 | 13 |
+| X リファレンス | 14〜17 |
+| XI Medical | 18 |
+| XII ビルド | 19 |
+| XIII uLisp リファレンス | 20 |
+| XIV クイックリファレンス | 21〜23 |
 
-詳細は **[操作マニュアル](docs/manual/index.md)** を参照してください。
+## ビルド（ソースから）
 
----
+FQBN:
 
-## 🛠 ビルド（ソースから）
+```
+m5stack:esp32:m5stack_cardputer:FlashSize=8M,PartitionScheme=huge_app
+```
 
-### Arduino IDE 2.x での手順
+必要ライブラリ:
 
-1. [Arduino IDE](https://www.arduino.cc/en/software) をインストール
-2. **ボードマネージャ** で **M5Stack** を追加
-3. **ライブラリマネージャ** で以下をインストール：
-   - `M5Cardputer` 1.1.1 以上
-   - `M5Unified` 0.2.21 以上
-   - `M5GFX` 0.2.28 以上
-4. `pomas_0_92.ino` と `splash_data.h` を同じフォルダに配置
-5. ボード設定：
+- M5Cardputer 1.1.1
+- M5Unified 0.2.26
+- M5GFX 0.2.33
 
-   | 項目 | 値 |
-   |---|---|
-   | ボード | M5Stack Cardputer |
-   | Partition Scheme | **Huge APP (3MB No OTA/1MB SPIFFS)** |
-   | Flash Size | **8MB** |
-   | PSRAM | **Disabled** |
+詳細は [第19章 ビルドと書き込み](docs/manual/19_build.md) を参照。
 
-6. `Ctrl + R` でコンパイル → `Ctrl + U` で書き込み
+## リリース情報
 
-### ビルドサイズの目安
+### v0.92（初公開）
 
-| 項目 | 使用量 |
+- Paper UI v2（淡ミント紙 + グラファイト + ミントアクセント）
+- バグ修正累計 47 件・デッドコード削除 9 件
+- uLisp GC 安全性向上・eval/apply 深度ガード
+- 医学計算 10 領域追加
+- 統計 17 種グラフ・CSV ストリーム
+- Auto power off（分単位設定）
+- uLisp スタック 32KB 増強（v3.x 対応環境）
+
+## ファイル構成
+
+```
+pomas_0_92/
+├── pomas_0_92.ino          メインスケッチ
+├── splash_data.h           スプラッシュ画像
+├── README.md               このファイル
+└── docs/                   GitHub Pages
+    ├── index.html          トップページ
+    ├── .nojekyll           Jekyll 無効化
+    └── manual/             操作マニュアル
+        ├── index.html      docsify
+        ├── index.md        目次
+        ├── _sidebar.md     サイドバー
+        └── 00〜23_*.md     各章
+```
+
+## 動作環境
+
+| 項目 | 値 |
 |---|---|
-| Flash | 1.62 MB / 3.15 MB (51%) |
-| RAM (Global) | 136 KB / 327 KB (41%) |
-
----
-
-## 📋 動作環境
-
-| 項目 | 内容 |
-|---|---|
-| ハードウェア | M5Stack Cardputer-Adv (ESP32-S3FN8) |
+| 機種 | M5Stack Cardputer-Adv (ESP32-S3FN8) |
 | Flash | 8 MB |
-| PSRAM | 非搭載 |
-| 画面 | ST7789V2 240×135 |
-| Arduino core | M5Stack 3.3.9 |
-| パーティション | huge_app |
+| RAM | 512 KB (PSRAM なし) |
+| 画面 | 240 × 135 px, RGB565 |
+| Flash 使用率 | 約 56%（v0.92 ビルド時） |
+| RAM 使用率 | 約 44%（グローバル変数） |
+| 連続使用時間 | 約 4〜6 時間（使用状況による） |
 
----
+## リンク
 
-## 📊 実装状況（v0.92）
+- [GitHub リポジトリ](https://github.com/jpeqtx/PoMaS)
+- [最新版をダウンロード](https://github.com/jpeqtx/PoMaS/releases/latest)
+- [Issues](https://github.com/jpeqtx/PoMaS/issues)
+- [マニュアル（全 24 章）](https://jpeqtx.github.io/PoMaS/)
 
-### ✅ 実装済み
+## ライセンス
 
-| モード | サブ機能 | 状態 |
-|---|---|---|
-| **Calculator** | 四則・関数・階乗・組合せ | ✅ |
-| | 履歴・メモリ・変数 A〜J | ✅ |
-| | Ans バンク（最大 20 件） | ✅ |
-| | 複素数演算 | ✅ |
-| | 基数変換（DEC/HEX/OCT/BIN） | ✅ |
-| | ビット演算 | ✅ |
-| | RPN モード | ✅ |
-| | 拡張ツール（方程式 / 数値解析 / 行列 / 幾何 / 確率 / 素因数） | ✅ |
-| **CAS** | 多項式評価・微分・積分・加減乗算 | ✅ |
-| | 多項式の根（複素数対応） | ✅ |
-| | 数値テイラー展開 / 極限 / 記号置換 | ✅ |
-| **Statistics** | Lists & Descriptive | ✅ |
-| | 回帰 9 種 | ✅ |
-| | 検定 11 種 | ✅ |
-| | ノンパラ 7 種 / リスク 5 種 | ✅ |
-| | 分布ブラウザ 7 種 | ✅ |
-| | 多変量解析 5 種 | ✅ |
-| | 層別解析 5 種 | ✅ |
-| | 生存分析 4 種 | ✅ |
-| | メタアナリシス 5 種 | ✅ |
-| | 統計グラフ 17 種 | ✅ |
-| | CSV ストリーム統計 | ✅ |
-| **SciRef** | 科学定数 386 件 | ✅ |
-| | 科学法則 300 件 | ✅ |
-| | 単位換算 532 単位 / 20 カテゴリ | ✅ |
-| | 周期表 118 元素 | ✅ |
-| | シンボル検索 | ✅ |
-| **Graph** | y=f(x) / Parametric / Polar | ✅ |
-| | Implicit / Inequality | ✅ |
-| | Sequence / 3D wireframe | ✅ |
-| | Trace / Zoom / Box zoom | ✅ |
-| | G-Solve（根・極値・交点・積分） | ✅ |
-| | Tangent / Normal | ✅ |
-| | Square aspect (1:1) | ✅ |
-| **Tools** | Spreadsheet 45×26 + 数式セル | ✅ |
-| | CSV 保存 / 読込 | ✅ |
-| | μLisp インタプリタ | ✅ |
-| | GC（Env マーク&スイープ） | ✅ |
-| | Wi-Fi 接続 / スキャン | ✅ |
-| | 電源 / SD 情報 | ✅ |
-| | 設定 NVS 永続化 | ✅ |
-| **UI** | Paper UI v2 | ✅ |
-| | スプラッシュ | ✅ |
-| | BMP スクリーンショット | ✅ |
-| | ESC カスケード防止 | ✅ |
-| | 長文自動切り詰め | ✅ |
-| **Security** | μlisp 引数ガード / nil チェック | ✅ |
-| | ゼロ除算エラー化 | ✅ |
-| | パーサ深さ制限 | ✅ |
-| | メモリ境界チェック | ✅ |
+MIT License
 
-### 🔧 既知の制限
+## 作者
 
-| 項目 | 内容 | 制約理由 |
-|---|---|---|
-| 統計リスト | 200 要素まで | PSRAM 非搭載のため |
-| μLisp セルプール | 2500 個 | RAM 制約 |
-| Maxima 連携 | **クライアント側のみ実装**。Maxima 本体・HTTP プロキシサーバーは非同梱 | サーバー未同梱 |
-| Wi-Fi | 2.4GHz 帯のみ | ESP32-S3 仕様 |
-| 画面サイズ | 240×135 | ハードウェア固定 |
-
-### 🚧 未完了項目（v0.93 以降）
-
-| 優先度 | 項目 | 予定バージョン |
-|---|---|---|
-| 高 | UI 磨き（配色・フォント・レイアウト微調整） | v0.93 |
-| 高 | スクリーンショット自動生成 | v0.93 |
-| 中 | Maxima プロキシ同梱 / セルフホスト手順（現状は各自構築が必要） | v0.94 |
-| 中 | μLisp の `let*` / `letrec` / `case` 追加 | v0.94 |
-| 中 | 3D プロットの回転操作 | v0.94 |
-| 低 | 数式履歴の NVS 永続化 | v0.95 |
-| 低 | スプレッドシートのセル参照範囲 `A1:A10` | v0.95 |
-| 低 | CSV エクスポート形式オプション | v1.0 |
-| 低 | 多言語対応（日本語 / 英語切替） | v1.0 |
-
-### 🐛 修正履歴（v0.92 で解消、合計 89 件）
-
-| Step | 分類 | 件数 | 概要 |
-|---|---|---|---|
-| 1 | Critical | 6 | tDist 型・qrEig・implicit Y-flip・plotSeq・bSave 型・geomInv |
-| 2 | High | 10 | resetAll・malloc・VIF・trace・CsvStream・bitOps・空行列 |
-| 3 | High | 4 | ESC カスケード・E 変数・Square aspect |
-| 4+ | Medium | 40 | μLisp GC・引数ガード・evalArgs・Env bool 化・Maxima URL |
-| 5 | Security | 17 | GC マーク&スイープ・parseList EOF・if/cond/let ガード・ゼロ除算 |
-| 6 | 性能・安全 | 5 | printCell 書き換え・引数過多チェック・深度制限・引数上限拡張・bAppend 最適化 |
-| 7 | 軽微 | 7 | hex/strtod 順序・dead code・radical 上限・バッジ clamp・scan 上限・決定木 -1・qrEig 収束 |
-
-### 🧪 動作検証
-
-| 項目 | 結果 |
-|---|---|
-| コンパイル | ✅ 成功 |
-| Flash 使用率 | 51% (1.62 MB / 3.15 MB) |
-| RAM 使用率 | 41% (136 KB / 327 KB) |
-| 実機動作 | ⏳ 一部確認済み / 詳細検証は継続中 |
-
----
-
-## 📁 プロジェクト構成
-
-```
-PoMaS/
-├── pomas_0_92.ino           # メインスケッチ（約 12,800 行）
-├── splash_data.h            # スプラッシュ画像（RLE 圧縮）
-├── README.md                # このファイル
-├── docs/
-│   ├── index.html           # GitHub Pages トップ
-│   ├── manual.html          # マニュアル HTML 版
-│   └── manual/              # マニュアル Markdown 分割版
-│       ├── index.md
-│       ├── 01_intro.md
-│       └── ...（順次追加中）
-├── .gitignore
-└── LICENSE
-```
-
----
-
-## 🤝 コントリビュート
-
-Issue / Pull Request を歓迎します。
-
-バグ報告の際は以下を含めてください：
-- 使用中のファームウェアバージョン
-- 再現手順
-- 期待した動作と実際の動作
-
----
-
-## 📄 ライセンス
-
-**MIT License** — 詳細は [LICENSE](LICENSE) を参照。
-
----
-
-## 👤 作者
-
-**YNGMT** — [GitHub (@jpeqtx)](https://github.com/jpeqtx)
-
-PoMaS は YNGMT によるオリジナル実装です。
-
----
-
-## 🙏 謝辞
-
-- [M5Stack](https://m5stack.com/) — Cardputer-Adv ハードウェア
-- [M5Unified](https://github.com/m5stack/M5Unified) — 統合ライブラリ
-- [M5GFX](https://github.com/m5stack/M5GFX) — グラフィックスライブラリ
-
-これらのプロジェクトなしには PoMaS は存在しません。
-
----
-
-## 📈 数値
-
-| 指標 | 値 |
-|---|---|
-| ソースコード行数 | 約 12,800 行 |
-| モード数 | 6 |
-| 統計サブモード数 | 12 |
-| 組み込み関数数 | 80+ |
-| 科学定数 | 386 |
-| 科学法則 | 300 |
-| 単位換算 | 532 |
-| 周期表元素 | 118 |
-| 統計グラフ種類 | 17 |
-| 幾何図形 | 27 |
+YNGMT（GitHub: [@jpeqtx](https://github.com/jpeqtx)）

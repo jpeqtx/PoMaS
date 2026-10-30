@@ -1,6 +1,19 @@
 # 第7章 CAS（数式処理）
 [← 第6章 電卓 応用](06_calculator_adv.md) | [目次](#/) | [第8章 統計 基本 →](08_statistics.md)
 ---
+## この章で学ぶこと
+
+- CAS（Computer Algebra System）の考え方
+- 多項式の入力書式
+- 代数コマンド（Factor/cFactor/Expand/completeSquare など）
+- 三角関数の式変形（tExpand/tCollect/toLn/toExp など）
+- 微積分コマンド（Derivative/Taylor/Integral/Tangent など）
+- 方程式コマンド（cSolve/cZeros）
+- 微分方程式コマンド（deSolve/deSolve2/RK4/ImpDiff）
+- 34 コマンドの完全リファレンス
+
+---
+
 ## 7.1 CAS とは
 **CAS（Computer Algebra System、コンピュータ代数システム）** は、
 数値を計算するのではなく、**数式そのものを操作する** システムです。
@@ -337,7 +350,713 @@ x0 に近いほど高精度、離れるほど誤差が大きくなります。
 PoMaS は展開しないので、結果を手で展開するか、
 Calculator で計算します。
 ---
-## 7.12 この章のまとめ
+## 7.12 CAS コマンド早見表（34 コマンド）
+
+PoMaS の CAS は電卓入力欄に `CommandName(arg)` 形式で記述して Enter で実行します。
+
+| 分類 | コマンド |
+|---|---|
+| 代数 | `Factor` `cFactor` `Expand` `completeSquare` `getNum` `getDenom` `propFrac` `comDenom` `Left` `Right` |
+| 三角・式変換 | `tExpand` `tCollect` `toLn` `toExp` `toSin` `toCos` `toLogbase` |
+| 微積分 | `Derivative` `Taylor` `Series` `LeadingTerm` `Tangent` `Normal` `ArcLength` `DiffQ` `fMin` `fMax` |
+| 方程式 | `cSolve` `cZeros` |
+| 微分方程式 | `deSolve` `deSolve2` `RK4` `ImpDiff` `implicitDiff` |
+
+各コマンドの詳細を以下に示します。
+
+---
+
+## 7.13 代数コマンド
+
+### Factor — 多項式の有理数範囲での因数分解
+
+**構文**: `Factor(p)`
+
+**用途**: 多項式 p を有理数係数の範囲で 1 次式・2 次式の積に分解。
+
+**例**:
+```
+Factor(x^2-5x+6)     → (x-2)(x-3)
+Factor(x^2-1)        → (x-1)(x+1)
+Factor(x^3-6x^2+11x-6) → (x-1)(x-2)(x-3)
+Factor(2x^2+5x-3)    → (2x-1)(x+3)
+```
+
+**備考**: 有理数根のみ検出。無理数根を含む因数分解はできない。
+
+**関連**: cFactor
+
+### cFactor — 複素数範囲での因数分解
+
+**構文**: `cFactor(p)`
+
+**用途**: 複素数根を持つ因数も含めて分解。
+
+**例**:
+```
+cFactor(x^2+1)       → (x-i)(x+i)
+cFactor(x^2+4)       → (x-2i)(x+2i)
+cFactor(x^2-2)       → (x-1.41421)(x+1.41421)
+```
+
+**備考**: 無理数根も数値近似で出力。
+
+**関連**: Factor
+
+### Expand — 多項式の展開
+
+**構文**: `Expand(p)`
+
+**用途**: (x+1)(x-1) → x²-1 のように展開。
+
+**例**:
+```
+Expand((x+1)(x-1))       → x^2-1
+Expand((x+2)^2)          → x^2+4x+4
+Expand((x+1)(x+2)(x+3))  → x^3+6x^2+11x+6
+```
+
+**関連**: Factor
+
+### completeSquare — 平方完成
+
+**構文**: `completeSquare(p)`
+
+**用途**: 2 次式 ax²+bx+c を a(x-p)²+q の形に変形。
+
+**例**:
+```
+completeSquare(x^2-4x+3)   → (x-2)^2-1
+completeSquare(x^2+6x+10)  → (x+3)^2+1
+completeSquare(2x^2+8x+5)  → 2(x+2)^2-3
+```
+
+**用途**: 2 次関数の頂点計算、積分の準備
+
+### getNum — 分数の分子
+
+**構文**: `getNum(f)`
+
+**例**:
+```
+getNum(3/4)         → 3
+getNum((x+1)/(x-1)) → x+1
+getNum(x/2)         → x
+```
+
+**関連**: getDenom
+
+### getDenom — 分数の分母
+
+**構文**: `getDenom(f)`
+
+**例**:
+```
+getDenom(3/4)         → 4
+getDenom((x+1)/(x-1)) → x-1
+getDenom(x/2)         → 2
+```
+
+**関連**: getNum
+
+### propFrac — 仮分数を帯分数に
+
+**構文**: `propFrac(f)`
+
+**用途**: (2x+3)/(x-1) を商 + 真分数に変形。
+
+**例**:
+```
+propFrac((2x+3)/(x-1))   → 2 + 5/(x-1)
+propFrac((x^2+1)/x)      → x + 1/x
+propFrac((x^3+2)/(x+1))  → x^2-x+1 + 1/(x+1)
+```
+
+**用途**: 有理関数の積分準備、極限計算
+
+### comDenom — 通分
+
+**構文**: `comDenom(expr)`
+
+**用途**: 複数の分数を共通分母でまとめる。
+
+**例**:
+```
+comDenom(1/x + 1/(x+1))       → (2x+1)/(x^2+x)
+comDenom(1/2 + 1/3)           → 5/6
+comDenom((x+1)/(x-1) - 1)     → 2/(x-1)
+```
+
+**関連**: propFrac
+
+### Left — 等式の左辺
+
+**構文**: `Left(eq)`
+
+**用途**: `a = b` の a を抽出。
+
+**例**:
+```
+Left(x+1=5)          → x+1
+Left(2x+y=10)        → 2x+y
+Left(x^2=4)          → x^2
+```
+
+**関連**: Right
+
+### Right — 等式の右辺
+
+**構文**: `Right(eq)`
+
+**例**:
+```
+Right(x+1=5)         → 5
+Right(2x+y=10)       → 10
+Right(x^2=4)         → 4
+```
+
+**関連**: Left
+
+---
+
+## 7.14 三角関数の式変形
+
+### tExpand — 加法定理で展開
+
+**構文**: `tExpand(sin(A+B))` または `tExpand(cos(A-B))`
+
+**例**:
+```
+tExpand(sin(A+B))    → sin(A)cos(B)+cos(A)sin(B)
+tExpand(sin(A-B))    → sin(A)cos(B)-cos(A)sin(B)
+tExpand(cos(A+B))    → cos(A)cos(B)-sin(A)sin(B)
+tExpand(cos(A-B))    → cos(A)cos(B)+sin(A)sin(B)
+```
+
+**関連**: tCollect
+
+### tCollect — 三角関数の縮約
+
+**構文**: `tCollect(sin²x)` または `tCollect(sinx*cosx)`
+
+**用途**: 積を和に、2 乗を 1 次に変換。
+
+**例**:
+```
+tCollect(sin(x)^2)        → (1-cos(2x))/2
+tCollect(cos(x)^2)        → (1+cos(2x))/2
+tCollect(sin(x)*cos(x))   → sin(2x)/2
+```
+
+**関連**: tExpand
+
+### toLn — 対数への変換
+
+**構文**: `toLn(a^x)`
+
+**用途**: 一般の底の指数関数を e の累乗に変換。
+
+**例**:
+```
+toLn(2^x)            → e^(x*ln(2))
+toLn(10^x)           → e^(x*ln(10))
+```
+
+**関連**: toExp
+
+### toExp — e^x への変換
+
+**構文**: `toExp(exp(x))`
+
+**用途**: 指数関数を e の累乗の形に統一。
+
+**例**:
+```
+toExp(exp(x))         → e^(x)
+toExp(exp(2x))        → e^(2x)
+```
+
+**関連**: toLn
+
+### toSin — cos を sin に変換
+
+**構文**: `toSin(cos(x))`
+
+**例**:
+```
+toSin(cos(x))         → sin(pi/2-x)
+toSin(cos(2x))        → sin(pi/2-2x)
+```
+
+**関連**: toCos
+
+### toCos — sin を cos に変換
+
+**構文**: `toCos(sin(x))`
+
+**例**:
+```
+toCos(sin(x))         → cos(pi/2-x)
+toCos(sin(3x))        → cos(pi/2-3x)
+```
+
+**関連**: toSin
+
+### toLogbase — 底を変更
+
+**構文**: `toLogbase(a, b)` または `toLogbase(log_a(b))`
+
+**用途**: log_a(b) を任意の底で表現。
+
+**例**:
+```
+toLogbase(2, 8)       → ln(8)/ln(2)
+toLogbase(3, 81)      → ln(81)/ln(3)
+```
+
+---
+
+## 7.15 微積分コマンド
+
+### Derivative — 記号微分
+
+**構文**: `Derivative(f(x), x)`
+
+**用途**: 任意の関数を x について記号微分。
+
+**例**:
+```
+Derivative(x^3, x)          → 3x^2
+Derivative(sin(x), x)       → cos(x)
+Derivative(exp(x), x)       → exp(x)
+Derivative(sin(x)*cos(x), x) → cos(x)^2-sin(x)^2
+Derivative(x^2*exp(x), x)   → 2x*exp(x)+x^2*exp(x)
+```
+
+**対応関数**: 多項式、sin、cos、tan、exp、ln、sqrt、四則演算、合成関数
+
+**備考**: 多項式は係数比較による完全記号微分、その他は微分ノードツリーで処理
+
+### Taylor — テイラー展開
+
+**構文**: `Taylor(f(x), x0, n)`
+
+**用途**: f(x) を x = x0 の周りで n 次までテイラー展開。
+
+**例**:
+```
+Taylor(sin(x), 0, 5)     → x-x^3/6+x^5/120
+Taylor(exp(x), 0, 4)     → 1+x+x^2/2+x^3/6+x^4/24
+Taylor(cos(x), 0, 4)     → 1-x^2/2+x^4/24
+Taylor(ln(1+x), 0, 3)    → x-x^2/2+x^3/3
+```
+
+**次数範囲**: 1〜7（n=7 で 7 次近似）
+
+**中心 x0**: 任意の値（x0 = 0 でマクローリン展開）
+
+**関連**: Series
+
+### Series — 級数展開（Taylor のエイリアス）
+
+**構文**: `Series(f(x), x0, n)`
+
+**用途**: `Taylor` と同じ。級数展開。
+
+**例**:
+```
+Series(sin(x), 0, 5)     → x-x^3/6+x^5/120
+Series(1/(1-x), 0, 5)    → 1+x+x^2+x^3+x^4+x^5
+```
+
+### LeadingTerm — 主要項の抽出
+
+**構文**: `LeadingTerm(p)`
+
+**用途**: 多項式 p の最高次項を返す。
+
+**例**:
+```
+LeadingTerm(x^3+2x+1)      → x^3
+LeadingTerm(3x^5-x^2+1)    → 3x^5
+LeadingTerm(5)             → 5
+```
+
+**用途**: 極限計算、漸近解析
+
+### Tangent — 接線の方程式
+
+**構文**: `Tangent(f(x), a)`
+
+**用途**: 曲線 y = f(x) の x = a における接線。
+
+**例**:
+```
+Tangent(x^2, 2)          → y = 4(x-2)+4 = 4x-4
+Tangent(sin(x), 0)       → y = 1(x-0)+0 = x
+Tangent(x^3, 1)          → y = 3(x-1)+1 = 3x-2
+```
+
+**戻り値形式**: `y = m(x-a)+f(a)` または展開形 `y = mx+b`
+
+**関連**: Normal
+
+### Normal — 法線の方程式
+
+**構文**: `Normal(f(x), a)`
+
+**用途**: 曲線 y = f(x) の x = a における法線（接線に垂直）。
+
+**例**:
+```
+Normal(x^2, 2)           → y = -1/4(x-2)+4
+Normal(x^3, 1)           → y = -1/3(x-1)+1
+```
+
+**傾き**: -1/f'(a)（f'(a) ≠ 0）、f'(a)=0 のとき x=a の垂線
+
+**関連**: Tangent
+
+### ArcLength — 曲線の長さ
+
+**構文**: `ArcLength(f(x), a, b)`
+
+**用途**: 曲線 y = f(x) の x = a から b までの弧長。
+
+**計算**: L = ∫ₐᵇ √(1 + f'(x)²) dx（数値積分）
+
+**例**:
+```
+ArcLength(x^2, 0, 1)     → 1.47894
+ArcLength(sin(x), 0, pi) → 3.82020
+```
+
+**用途**: 曲線の実長、測地線、軌道計算
+
+### DiffQ — 中心差分商
+
+**構文**: `DiffQ(f(x), a, h)`
+
+**用途**: 数値微分の中心差分商 [f(a+h) - f(a-h)] / (2h)。
+
+**例**:
+```
+DiffQ(x^2, 3, 0.001)     → 6.00000
+DiffQ(sin(x), 0, 0.001)  → 0.99999
+```
+
+**用途**: 微分の数値確認、h の影響観察
+
+### fMin — 数値最小値探索
+
+**構文**: `fMin(f(x), a, b)`
+
+**用途**: 区間 [a,b] 内の f(x) の最小値を数値探索。
+
+**例**:
+```
+fMin(x^2, -5, 5)          → min at x=0, f=0
+fMin((x-3)^2+1, 0, 10)    → min at x=3, f=1
+```
+
+**アルゴリズム**: グリッドサーチ（1000 点）+ 黄金分割（80 反復）
+
+**関連**: fMax
+
+### fMax — 数値最大値探索
+
+**構文**: `fMax(f(x), a, b)`
+
+**用途**: 区間 [a,b] 内の f(x) の最大値を数値探索。
+
+**例**:
+```
+fMax(-(x-3)^2+9, 0, 10)   → max at x=3, f=9
+fMax(sin(x), 0, pi)       → max at x=1.5708, f=1
+```
+
+**関連**: fMin
+
+---
+
+## 7.16 方程式コマンド
+
+### cSolve — 方程式を解く（複素解含む）
+
+**構文**: `cSolve(eq)` または `cSolve(expr)`
+
+**用途**: 方程式 eq を 0 について解く（cSolve(expr) は expr = 0 と同じ）。
+
+**例**:
+```
+cSolve(x^2-5x+6=0)       → x=3 ; x=2
+cSolve(x^2+1=0)          → x=i ; x=-i
+cSolve(x^3-6x^2+11x-6=0) → x=1 ; x=2 ; x=3
+cSolve(2x^2+x-1=0)       → x=0.5 ; x=-1
+```
+
+**範囲**: 最大 16 次多項式
+
+**戻り値**: 全根（実根 + 複素根）を `x=... ; x=...` 形式で表示
+
+**関連**: cZeros, 方程式ソルバー (Fn+8 → 1)
+
+### cZeros — 方程式の零点（cSolve のエイリアス）
+
+**構文**: `cZeros(expr)` = `cSolve(expr = 0)`
+
+**例**:
+```
+cZeros(x^2-5x+6)    → x=3 ; x=2
+cZeros(x^2+4)       → x=2i ; x=-2i
+```
+
+**関連**: cSolve
+
+---
+
+## 7.17 微分方程式コマンド
+
+### deSolve — 1 階 ODE 解析解
+
+**構文**: `deSolve(dy/dx = f)` — 各種の形に対応
+
+**対応形**:
+
+| 形 | 例 | 戻り値 |
+|---|---|---|
+| y' = f(x) | `deSolve(y'=x^2)` | `y = x^3/3 + C` |
+| y' = ky | `deSolve(y'=2y)` | `y = C*e^(2x)` |
+| y' = ay+b | `deSolve(y'=2y+3)` | `y = -1.5 + C*e^(2x)` |
+| y' = P(x)y+Q(x) | 一般形 | 一般解（文字列） |
+| y' = 0 | `deSolve(y'=0)` | `y = C` |
+
+**例**:
+```
+deSolve(y'=cos(x))     → y = sin(x) + C
+deSolve(y'=1/x)        → y = ln|x| + C
+deSolve(y'=e^x)        → y = e^x + C
+deSolve(y'=3y+1)       → y = -1/3 + C*e^(3x)
+```
+
+**備考**: 変数分離形・同次形・完全微分形など一般形は未対応（部分完了）
+
+**関連**: deSolve2, RK4
+
+### deSolve2 — 2 階線形 ODE（定数係数）
+
+**構文**: `deSolve2(a, b)` で y'' + a y' + b y = 0 を解く
+
+**例**:
+```
+deSolve2(1, 1)          → 減衰振動 y = e^(-x/2)(C1 cos(x√3/2)+C2 sin(x√3/2))
+deSolve2(-3, 2)         → y''-3y'+2y=0 → y = C1 e^(2x) + C2 e^(x)
+deSolve2(0, 1)          → y''+y=0 → y = C1 cos(x) + C2 sin(x)
+```
+
+**判別式 D = a² - 4b**:
+- D > 0: 実根 2 個 → `y = C1 e^(r1 x) + C2 e^(r2 x)`
+- D = 0: 重根 → `y = (C1 + C2 x) e^(r x)`
+- D < 0: 複素根 → `y = e^(αx)(C1 cos(βx) + C2 sin(βx))`
+
+### RK4 — Runge-Kutta 4 次
+
+**構文**: `RK4(f, x0, y0, xe, h)`
+
+**用途**: y' = f(x,y)、初期値 (x0, y0) から xe まで、ステップ h で RK4 数値解。
+
+**例**:
+```
+RK4(y, 0, 1, 2, 0.1)   → y(2) ≈ 7.38906（e^2 ≈ 7.389）
+RK4(-x*y, 0, 1, 1, 0.1) → y(1) ≈ 0.60653
+```
+
+**用途**: 数値的にしか解けない ODE、シミュレーション
+
+### ImpDiff / implicitDiff — 陰微分
+
+**構文**: `ImpDiff(F(x,y))` または `implicitDiff(F(x,y))`
+
+**用途**: F(x,y) = 0 から dy/dx = -F_x / F_y を記号計算。
+
+**例**:
+```
+ImpDiff(x^2+y^2-4)      → dy/dx = -(2x)/(2y) = -x/y
+ImpDiff(x*y-1)          → dy/dx = -(y)/(x) = -y/x
+ImpDiff(sin(x)+cos(y))  → dy/dx = -(cos(x))/(-sin(y)) = cos(x)/sin(y)
+```
+
+**用途**: 陰関数曲線の接線・法線、位相平面解析
+
+---
+
+## 7.18 CAS コマンドの組み合わせ例
+
+### 例 1: 曲線の性質を一括解析
+
+```
+f(x) = x^3 - 3x^2 + 2
+[1] Derivative(x^3-3x^2+2, x)  → 3x^2-6x
+[2] cZeros(3x^2-6x)            → x=0 ; x=2
+[3] fMin(x^3-3x^2+2, -10, 10)  → min at x=2, f=-2
+[4] fMax(x^3-3x^2+2, -10, 10)  → max at x=0, f=2
+[5] Tangent(x^3-3x^2+2, 1)     → y = -3(x-1)+0 = -3x+3
+```
+
+### 例 2: 有理関数の積分準備
+
+```
+[1] propFrac((x^2+1)/(x-1))    → x+1 + 2/(x-1)
+[2] getNum((x^2+1)/(x-1))      → x^2+1
+[3] getDenom((x^2+1)/(x-1))    → x-1
+[4] comDenom(1/(x-1) - 1/(x+1)) → 2/(x^2-1)
+```
+
+### 例 3: 極限・漸近の解析
+
+```
+[1] Taylor(sin(x), 0, 5)       → x-x^3/6+x^5/120
+[2] LeadingTerm(3x^5-x^2+1)    → 3x^5
+[3] ArcLength(x^2, 0, 1)       → 1.47894
+```
+
+### 例 4: ODE の数値解と解析解の比較
+
+```
+[1] deSolve(y'=y)              → y = C*e^x
+[2] RK4(y, 0, 1, 1, 0.01)      → y(1) ≈ 2.71828
+[3] exp(1)                     → 2.71828（一致確認）
+```
+
+---
+
+## 7.19 CAS の制限事項
+
+### 対応範囲
+
+| 対象 | 対応 |
+|---|---|
+| 多項式の次数 | 最大 16 次 |
+| 有理関数 | ○（部分分数分解、通分） |
+| 三角関数 | 加法定理・縮約のみ |
+| 指数・対数 | 底変換・e^x 統一のみ |
+| 微分 | sin/cos/tan/exp/ln/sqrt の組み合わせ |
+| 積分 | 多項式のみ（任意関数は数値積分 Fn+8 → 2） |
+| ODE | 1 階（一部形のみ）、2 階定数係数 |
+
+### 未対応の高度機能
+
+- 記号積分（部分積分・置換積分の自動化）
+- 連立方程式の記号解
+- 行列式の記号計算
+- ベクトル解析（grad/div/curl の記号化）
+- 特殊関数（Bessel, Legendre, Hermite など）
+- 級数の収束判定
+- 極限の記号計算（`Limit` コマンドは未実装、数値のみ）
+
+これらは外部 Maxima 連携（Tools → 3 → 6）で補完できます。
+
+---
+
+## 7.20 CAS の使い方のコツ
+
+### 1. 変数は x に統一
+
+CAS コマンドは原則 x を変数として扱います。`Derivative(f, x)` の第 2 引数で他の変数を指定可能（1 文字のみ）。
+
+### 2. 多項式は展開形で入力
+
+`(x+1)(x+1)` ではなく `x^2+2x+1` の形で入力してください（parsePoly が展開形のみ対応）。
+
+### 3. 冪乗は `^` 記号
+
+`x**2` や `x*x` ではなく `x^2` を使う。
+
+### 4. 分数はそのまま
+
+`1/2` は 0.5 に変換されません（有理数として保持）。`3/4 + 1/4 = 1` と厳密に計算されます。
+
+### 5. 結果は Ans へ
+
+CAS コマンドの結果は `Ans` に転送できます。続けて数値計算に使えます。
+
+```
+[1] cSolve(x^2-5x+6=0)     → x=3 ; x=2
+[2] Y キー → Ans = 3
+[3] Ans * 2                → 6
+```
+
+---
+
+## 7.21 CAS コマンド実行の内部処理
+
+### 呼出順序
+
+Calculator の入力欄に文字列を入れると、以下の順で処理されます:
+
+```
+[1] tryAssignOrFunc  — a = b, f(x) = ... の形式を検出
+[2] tryCasCommand    — CommandName(arg) の形式を検出
+[3] 通常評価 (ExprEval)
+```
+
+CAS コマンドは `CommandName(` の後に `(...)` を続ける形式のみ認識されます。
+
+```
+✅ Factor(x^2-1)        正しい
+❌ Factor (x^2-1)       空白あり → 通常評価として失敗
+❌ factor(x^2-1)        cFactor と区別不能 → tryCasCommand で小文字許容
+```
+
+### 記号微分エンジン
+
+Derivative / ImpDiff / Tangent / Normal は **微分ノードツリー** で処理:
+
+- 各演算（+、-、*、/、^）と関数（sin、cos、exp、ln、sqrt）を DNode としてツリー化
+- 再帰的に微分規則を適用
+- 簡略化パスで 0*x → 0、x^1 → x などを削減
+
+最大 200 ノードまで、深度 120 まで対応。
+
+---
+
+## 7.22 CAS と他モードの連携
+
+### Calculator との連携
+
+```
+CAS で結果 → Y キー → Ans → Calculator で継続計算
+```
+
+### Graph との連携
+
+```
+[1] CAS で Derivative(f, x) を計算
+[2] 結果を手動で Graph の関数入力にコピー
+[3] 元の関数と導関数を同時プロット
+```
+
+### Statistics との連携
+
+```
+[1] CAS で回帰モデルの式変形
+[2] 結果を Statistics の回帰分析に活用
+```
+
+### Maxima との連携
+
+CAS で未対応の高度な計算は Maxima サーバーへ送信:
+
+```
+Tools → 3 → 6 (Send to Maxima)
+URL prefix: http://your-proxy/maxima?expr=
+Maxima expr: integrate(sin(x)*cos(x), x)
+→ 結果を HTTP で受信
+```
+
+---
+
+## 7.23 この章のまとめ
 - CAS は数式をそのまま操作する
 - 多項式の評価・微分・積分・加減乗算
 - 根の計算（複素数対応）
