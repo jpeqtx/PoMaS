@@ -61,3 +61,9 @@ secrets.h
 !README.md
 !LICENSE
 !CHANGELOG.md
+# 作業用スクリプト・内部メモ（公開しない）
+fix_*.ps1
+make_*.ps1
+write_index.ps1
+apply_patches.ps1
+PoMaS_引き継書_*.txt
