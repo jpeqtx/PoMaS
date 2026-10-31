@@ -1176,7 +1176,10 @@ private:
     }
 
     double parseFactor() {
-        double v = parseUnary();
+        skipSpaces();
+        if (_src[_pos] == '-') { _pos++; return -parseFactor(); }
+        if (_src[_pos] == '+') { _pos++; return parseFactor(); }
+        double v = parsePrimary();
         while (true) {
             skipSpaces();
             if (_src[_pos] == '!') { _pos++; v = factD(v); }
@@ -13043,6 +13046,11 @@ private:
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  Part 19 / 20 ─ グラフエンジン + スプレッドシート                     ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
+struct RadGuard {
+    AngleMode s_;
+    RadGuard() : s_(G.angle) { G.angle = RAD; }
+    ~RadGuard() { G.angle = s_; }
+};
 class GraphEngine {
 public:
     static const int MAXF = 4;
@@ -13197,6 +13205,7 @@ private:
     }
 
     void plotParamSurface() {
+    RadGuard rg_;
         if (!expr[0][0] || !expr[1][0] || !expr[2][0]) { DM.notify("Set F1=x(u,v), F2=y, F3=z", C_ERR, 1500); return; }
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Param Surface");
@@ -13448,6 +13457,7 @@ private:
     }
 
     void drawAll() {
+    RadGuard rg_;
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG);
         if (fabs(xmax - xmin) < 1e-12 || fabs(ymax - ymin) < 1e-12) return;
@@ -13626,6 +13636,7 @@ private:
     }
 
     void plotIneqIntersect() {
+    RadGuard rg_;
         int activeN = 0;
         for (int f = 0; f < MAXF; f++) if (active[f] && expr[f][0]) activeN++;
         if (activeN == 0) { DM.notify("No active fn", C_ERR); return; }
@@ -13727,6 +13738,7 @@ private:
     }
 
     void drawTraceMarker(int f, double xv) {
+    RadGuard rg_;
         if (modeT != 0) return;
         if (!active[f]) return;
         auto& d = M5Cardputer.Display;
@@ -13773,6 +13785,7 @@ private:
     }
 
     void gsolveMenu() {
+    RadGuard rg_;
         const char* items[] = {
             "Root (sign change scan)","Maximum (gradient ascent)","Minimum (gradient descent)",
             "Intersection f1 = f2","y at x","x at y (root of f-y)","Definite integral","Back"
@@ -13941,6 +13954,7 @@ private:
     }
 
     void tanNormal() {
+    RadGuard rg_;
         int idx = -1;
         for (int i = 0; i < MAXF; i++) if (active[i] && expr[i][0]) { idx = i; break; }
         if (idx < 0) { DM.notify("No fn", C_ERR); return; }
@@ -13969,6 +13983,7 @@ private:
     }
 
     void drawGradientField() {
+    RadGuard rg_;
         if (!expr[0][0]) { DM.notify("Set F1 = f(x,y)", C_ERR); return; }
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Gradient Field"); DM.footer("S:save R:range", "", "ESC:back");
@@ -14008,6 +14023,7 @@ private:
     }
 
     void drawPhasePlane() {
+    RadGuard rg_;
         if (!expr[0][0] || !expr[1][0]) { DM.notify("Set F1=dx/dt, F2=dy/dt", C_ERR); return; }
         auto& d = M5Cardputer.Display;
         d.fillScreen(C_BG); DM.header("Phase Plane"); DM.footer("S:save R:range", "", "ESC:back");
